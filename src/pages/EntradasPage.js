@@ -1,32 +1,36 @@
 // src/pages/EntradasPage.js
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-    Grid, Paper, Typography, Button, IconButton, FormControl, InputLabel, Select, MenuItem,
+    Grid, Paper, Typography, Button, FormControl, InputLabel, Select, MenuItem,
     Collapse, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Backdrop, Box,
     TextField, InputAdornment
 } from '@mui/material';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import SearchIcon from '@mui/icons-material/Search';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import EntryList from '../components/EntryList';
 import NewEntry from '../components/NewEntry';
-import EntryViewer from '../components/EntryViewer'; // <-- AÑADIR IMPORTACIÓN
+import EntryViewer from '../components/EntryViewer';
 import NotebookList from '../components/NotebookList';
 import NotebookDialog from '../components/NotebookDialog';
 import SnackbarAlert from '../components/SnackbarAlert';
-import { getUserNotebooks, createNotebook, deleteNotebook, moveEntriesToGeneral } from '../data/notebooks';
-import { auth, db } from '../firebase';
-import { doc, collection, deleteDoc } from 'firebase/firestore';
+import { getUserNotebooks, createNotebook, deleteNotebook, moveEntriesToGeneral, updateNotebookName } from '../data/notebooks';
+import { collection, query, orderBy, limit, onSnapshot, getCountFromServer, where } from 'firebase/firestore';
+import { db, auth } from '../firebase';
+import { getMoreEntries, deleteEntryById, PAGE_SIZE } from '../services/entryService';
 
-const EntradasPage = ({ entries, availableTags, setAvailableTags, onUpdateEntries }) => {
+const EntradasPage = ({ availableTags, setAvailableTags }) => {
+    const [entries, setEntries] = useState([]);
+    const [lastVisible, setLastVisible] = useState(null);
+    const [hasMore, setHasMore] = useState(true);
+    const [loadingInitial, setLoadingInitial] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [selectedEntry, setSelectedEntry] = useState(null);
-    const [mode, setMode] = useState('list'); // Ahora incluye 'view': 'list' | 'view' | 'edit' | 'new'
+    const [mode, setMode] = useState('list');
     const [filtersOpen, setFiltersOpen] = useState(true);
     const [filter, setFilter] = useState({ tag: '', year: '', month: '', day: '' });
-    const [notebooks, setNotebooks] = useState([
-        { id: 'all', nombre: 'Mis Notas', count: 0 },
-        { id: 'default', nombre: 'General', count: 0 }
-    ]);
+    const [notebooks, setNotebooks] = useState([]);
     const [selectedNotebookId, setSelectedNotebookId] = useState('all');
     const [notebookDialogOpen, setNotebookDialogOpen] = useState(false);
     const [notebookToDelete, setNotebookToDelete] = useState(null);
@@ -34,73 +38,138 @@ const EntradasPage = ({ entries, availableTags, setAvailableTags, onUpdateEntrie
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
     const [openNotebookDialogRequest, setOpenNotebookDialogRequest] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [isEditNotebookDialogOpen, setIsEditNotebookDialogOpen] = useState(false);
+    const [notebookToEdit, setNotebookToEdit] = useState(null);
 
-    // --- Función para Cargar y Actualizar Cuadernos ---
+    useEffect(() => {
+        setLoadingInitial(true);
+        const userId = auth.currentUser ? auth.currentUser.uid : null;
+        if (!userId) {
+            setLoadingInitial(false);
+            setEntries([]);
+            setHasMore(false);
+            return;
+        }
+        const entriesRef = collection(db, 'users', userId, 'entries');
+        const q = query(entriesRef, orderBy('updatedAt', 'desc'), limit(PAGE_SIZE));
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            const firstBatchEntries = [];
+            querySnapshot.forEach((doc) => {
+                firstBatchEntries.push({ id: doc.id, ...doc.data() });
+            });
+            setEntries(firstBatchEntries);
+            const currentLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1];
+            setLastVisible(currentLastVisible);
+            setHasMore(firstBatchEntries.length === PAGE_SIZE);
+            setLoadingInitial(false);
+            console.log(`Firestore listener updated: Received ${firstBatchEntries.length} entries for the first batch.`);
+        }, (error) => {
+            setSnackbar({ open: true, message: 'Error al cargar entradas.', severity: 'error' });
+            setLoadingInitial(false);
+            setEntries([]);
+            setHasMore(false);
+        });
+        return () => {
+            unsubscribe();
+        };
+    }, []);
+
+    const loadMoreEntries = useCallback(async () => {
+        if (loadingMore || !hasMore || !lastVisible) return;
+        setLoadingMore(true);
+        try {
+            const { entries: newEntries, lastVisible: newLastVisible, hasMore: newHasMore } = await getMoreEntries(lastVisible);
+            if (newEntries.length > 0) {
+                setEntries(prevEntries => [...prevEntries, ...newEntries]);
+            }
+            setLastVisible(newLastVisible || lastVisible);
+            setHasMore(newHasMore);
+        } catch (error) {
+            setSnackbar({ open: true, message: 'Error cargando más entradas.', severity: 'error' });
+            setHasMore(false);
+        } finally {
+            setLoadingMore(false);
+        }
+    }, [lastVisible, hasMore, loadingMore, setSnackbar]);
+
     const fetchAndUpdateNotebooks = useCallback(async (showLoading = true) => {
+        const userId = auth.currentUser ? auth.currentUser.uid : null;
+        if (!userId) {
+            setNotebooks([
+                { id: 'all', nombre: 'Mis Notas', count: 0 },
+                { id: 'default', nombre: 'General', count: 0 }
+            ]);
+            return;
+        }
         if (showLoading) setLoading(true);
-        console.log("Fetching and updating notebooks...");
         try {
             const userNotebooks = await getUserNotebooks();
-            const notebooksWithCount = userNotebooks.map(nb => ({
-                ...nb,
-                count: entries.filter(e => (e.notebookId || 'default') === nb.id).length
-            }));
-            const allNotebooks = [
-                { id: 'all', nombre: 'Mis Notas', count: entries.length },
-                { id: 'default', nombre: 'General', count: entries.filter(e => !e.notebookId || e.notebookId === 'default').length },
-                ...notebooksWithCount
+            const entriesRef = collection(db, 'users', userId, 'entries');
+            const calculateCount = async (notebookId) => {
+                let q;
+                if (notebookId === 'all') {
+                    q = query(entriesRef);
+                } else if (notebookId === 'default') {
+                    q = query(entriesRef, where('notebookId', '==', 'default'));
+                } else {
+                    q = query(entriesRef, where('notebookId', '==', notebookId));
+                }
+                try {
+                    const snapshot = await getCountFromServer(q);
+                    return snapshot.data().count;
+                } catch (error) {
+                    console.error(`Error getting count for notebook ${notebookId}:`, error);
+                    return 0;
+                }
+            };
+            const countPromises = [
+                calculateCount('all'),
+                calculateCount('default'),
+                ...userNotebooks.map(nb => calculateCount(nb.id))
             ];
-            setNotebooks(allNotebooks);
-            console.log("Notebooks updated:", allNotebooks);
-            return allNotebooks;
+            const counts = await Promise.all(countPromises);
+            const totalCount = counts[0];
+            const defaultExplicitCount = counts[1];
+            const userNotebookCounts = counts.slice(2);
+            let countInUserNotebooks = 0;
+            const updatedUserNotebooks = userNotebooks.map((nb, index) => {
+                countInUserNotebooks += userNotebookCounts[index];
+                return { ...nb, count: userNotebookCounts[index] };
+            });
+            const generalImplicitCount = totalCount - countInUserNotebooks;
+            const finalNotebooks = [
+                { id: 'all', nombre: 'Mis Notas', count: totalCount },
+                { id: 'default', nombre: 'General', count: generalImplicitCount },
+                ...updatedUserNotebooks
+            ];
+            setNotebooks(finalNotebooks);
+            return finalNotebooks;
         } catch (error) {
-            console.error("Error fetching notebooks:", error);
-            setSnackbar({ open: true, message: 'Error cargando cuadernos', severity: 'error' });
-            setNotebooks(prev => [
-                { id: 'all', nombre: 'Mis Notas', count: entries.length },
-                { id: 'default', nombre: 'General', count: entries.filter(e => !e.notebookId || e.notebookId === 'default').length },
-                ...(prev.filter(nb => nb.id !== 'all' && nb.id !== 'default'))
+            setNotebooks([
+                { id: 'all', nombre: 'Mis Notas', count: 0 },
+                { id: 'default', nombre: 'General', count: 0 }
             ]);
-            return notebooks;
         } finally {
             if (showLoading) setLoading(false);
         }
-    }, [entries]); // Depende de entries para recalcular counts
+    }, []);
 
-
-    // --- useEffect para Carga Inicial y Cambios en Entradas ---
     useEffect(() => {
         fetchAndUpdateNotebooks();
     }, [fetchAndUpdateNotebooks]);
 
-
-    // --- useEffect para Limpiar Selección / Modo ---
     useEffect(() => {
-        // Si estamos en modo lista, asegurar que no haya selección
-        if (mode === 'list' && selectedEntry) {
-            setSelectedEntry(null);
-        }
-
-        // Si la entrada seleccionada ya no está en la lista filtrada (por cambio de cuaderno/filtro), volver a lista
+        if (mode === 'list' && selectedEntry) { setSelectedEntry(null); }
         if (selectedEntry && (mode === 'view' || mode === 'edit')) {
-            const isEntryInFilteredList = filteredEntries.some(e => e.id === selectedEntry.id);
-            if (!isEntryInFilteredList) {
-                console.log(`Selected entry ${selectedEntry.id} not in filtered list. Returning to list mode.`);
+            const isEntryStillLoaded = entries.some(e => e.id === selectedEntry.id);
+            if (!isEntryStillLoaded) {
                 setMode('list');
                 setSelectedEntry(null);
             }
         }
+        if (mode === 'edit' && !selectedEntry) { setMode('list'); }
+    }, [entries, mode, selectedEntry, filter, selectedNotebookId]);
 
-        // Si estamos en modo editar pero se deselecciona la entrada (ej: borrada), volver a lista
-        if (mode === 'edit' && !selectedEntry) {
-            console.log("In edit mode but no entry selected, switching to list.");
-            setMode('list');
-        }
-
-    }, [selectedNotebookId, filter, entries, mode, selectedEntry]); // Added filter and entries to dependencies
-
-
-    // --- Filtering Logic ---
     const meses = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const filteredEntries = entries.filter(entry => {
         // 1. Filtro Cuaderno
@@ -176,9 +245,8 @@ const EntradasPage = ({ entries, availableTags, setAvailableTags, onUpdateEntrie
         if (!entryToDelete || !entryToDelete.id) { setSnackbar({ open: true, message: 'Error: No se pudo identificar la entrada a eliminar.', severity: 'error' }); return; }
         setLoading(true);
         try {
-            const user = auth.currentUser; if (!user) throw new Error("Usuario no autenticado");
-            const entryRef = doc(db, 'users', user.uid, 'entries', entryToDelete.id);
-            await deleteDoc(entryRef);
+            const entryIdToDelete = entryToDelete.id;
+            await deleteEntryById(entryIdToDelete);
             setSnackbar({ open: true, message: 'Entrada eliminada correctamente', severity: 'success' });
             handleReturnToList(); // Volver a la lista después de borrar
         } catch (error) {
@@ -189,77 +257,128 @@ const EntradasPage = ({ entries, availableTags, setAvailableTags, onUpdateEntrie
     }, [handleReturnToList]);
 
     // *** MODIFICADO: handleDeleteNotebook ***
-    const handleDeleteNotebook = async (notebook) => {
-        if (!notebook || ['all', 'default'].includes(notebook.id)) return;
-
-        // *** Confirmación Adicional (Opcional pero buena idea) ***
-        if (!window.confirm(`¿Seguro que quieres eliminar el cuaderno "${notebook.nombre}"? Sus notas pasarán a "General".`)) {
-            setNotebookToDelete(null); // Cerrar diálogo si cancela
-            return;
-        }
-
-        setLoading(true); // Iniciar loading
-        setNotebookToDelete(null); // Cerrar diálogo de confirmación inmediatamente
-
-        try {
-            // Mover entradas PRIMERO y esperar a que termine
-            await moveEntriesToGeneral(notebook.id);
-            console.log("Entries moved to general for notebook:", notebook.id);
-
-            // Eliminar el cuaderno DESPUÉS de mover las entradas
-            await deleteNotebook(notebook.id);
-            console.log("Notebook document deleted:", notebook.id);
-
-            setSnackbar({ open: true, message: `Cuaderno "${notebook.nombre}" eliminado`, severity: 'info' });
-
-            if (selectedNotebookId === notebook.id) {
-                setSelectedNotebookId('all');
-            }
-        } catch (error) {
-            console.error("Error deleting notebook:", error);
-            setSnackbar({ open: true, message: `Error eliminando cuaderno: ${error.message}`, severity: 'error' });
-        } finally {
-            setLoading(false); // Terminar loading
-        }
-    };
-
-    const requestOpenNotebookDialog = (callback = null) => { // Sigue igual
-        console.log("Request to open notebook dialog received. Callback:", callback);
-        setOpenNotebookDialogRequest({ callback }); setNotebookDialogOpen(true);
-    };
-
-    // *** AÑADIR ESTA FUNCIÓN DE NUEVO ***
     const handleCreateNotebook = async (nombre) => {
         setLoading(true);
         let newNotebookId = null;
+        let success = false;
         try {
             const newNotebook = await createNotebook(nombre);
             newNotebookId = newNotebook.id;
+            success = true;
             setSnackbar({ open: true, message: `Cuaderno "${nombre}" creado`, severity: 'success' });
-            setNotebookDialogOpen(false); // Cerrar diálogo
-            await fetchAndUpdateNotebooks(false); // Refrescar lista de cuadernos
+            setNotebookDialogOpen(false);
             if (openNotebookDialogRequest?.callback) {
                 openNotebookDialogRequest.callback(newNotebookId);
                 setOpenNotebookDialogRequest(null);
             }
         } catch (error) {
-            console.error("Error creating notebook:", error);
-            setSnackbar({ open: true, message: `Error creando cuaderno: ${error.message}`, severity: 'error' });
             setOpenNotebookDialogRequest(null);
         } finally {
             setLoading(false);
+            if (success) {
+                fetchAndUpdateNotebooks(false);
+            }
         }
     };
-    // *** FIN FUNCIÓN AÑADIDA ***
+
+    const handleDeleteNotebook = async (notebook) => {
+        if (!notebook || ['all', 'default'].includes(notebook.id)) return;
+        setLoading(true);
+        setNotebookToDelete(null);
+        let success = false;
+        try {
+            await moveEntriesToGeneral(notebook.id);
+            await deleteNotebook(notebook.id);
+            success = true;
+            setSnackbar({ open: true, message: `Cuaderno "${notebook.nombre}" eliminado`, severity: 'info' });
+            if (selectedNotebookId === notebook.id) {
+                setSelectedNotebookId('all');
+            }
+        } catch (error) {
+            setSnackbar({ open: true, message: `Error eliminando cuaderno: ${error.message}`, severity: 'error' });
+        } finally {
+            setLoading(false);
+            if (success) {
+                fetchAndUpdateNotebooks(false);
+            }
+        }
+    };
+
+    const requestOpenNotebookDialog = (callback = null) => { 
+        console.log("Request to open notebook dialog received. Callback:", callback);
+        setOpenNotebookDialogRequest({ callback }); 
+        setNotebookToEdit(null);
+        setIsEditNotebookDialogOpen(true);
+    };
+
+    const handleOpenCreateNotebookDialog = () => {
+        setNotebookToEdit(null);
+        setIsEditNotebookDialogOpen(true);
+        // No limpiar openNotebookDialogRequest aquí
+    };
+    const handleOpenEditNotebookDialog = (notebook) => {
+        if (!notebook || ['all', 'default'].includes(notebook.id)) return;
+        setNotebookToEdit(notebook);
+        setIsEditNotebookDialogOpen(true);
+    };
+    const handleCloseNotebookDialog = () => {
+        setIsEditNotebookDialogOpen(false);
+        setNotebookToEdit(null);
+        setOpenNotebookDialogRequest(null);
+    };
+    const handleSaveNotebook = async (newName) => {
+        const trimmedName = newName.trim();
+        if (!trimmedName) return;
+        const isDuplicate = notebooks.some(nb =>
+            nb.nombre.toLowerCase() === trimmedName.toLowerCase() &&
+            (!notebookToEdit || nb.id !== notebookToEdit.id)
+        );
+        if (isDuplicate) {
+            setSnackbar({ open: true, message: `El cuaderno "${trimmedName}" ya existe.`, severity: 'error' });
+            return;
+        }
+        setLoading(true);
+        let newNotebookId = null;
+        let success = false;
+        const savedCallbackInfo = openNotebookDialogRequest;
+        setOpenNotebookDialogRequest(null);
+        try {
+            if (notebookToEdit && notebookToEdit.id) {
+                await updateNotebookName(notebookToEdit.id, trimmedName);
+                setSnackbar({ open: true, message: 'Cuaderno renombrado.', severity: 'success' });
+                success = true;
+            } else {
+                const newNotebook = await createNotebook(trimmedName);
+                newNotebookId = newNotebook.id;
+                setSnackbar({ open: true, message: `Cuaderno "${trimmedName}" creado.`, severity: 'success' });
+                success = true;
+                // NO llamar al callback aquí todavía
+            }
+        } catch (error) {
+            setSnackbar({ open: true, message: `Error al guardar cuaderno: ${error.message}`, severity: 'error' });
+        } finally {
+            setLoading(false);
+            if (success) {
+                handleCloseNotebookDialog();
+                console.log("Notebook saved/updated, now fetching updated list...");
+                await fetchAndUpdateNotebooks(false);
+                console.log("Notebook list updated.");
+                if (!notebookToEdit && savedCallbackInfo?.callback && newNotebookId) {
+                    console.log("Calling notebook creation callback with ID:", newNotebookId);
+                    savedCallbackInfo.callback(newNotebookId);
+                }
+            }
+        }
+    };
 
     // --- UI Elements ---
     const currentYear = new Date().getFullYear();
 
     return (
         <React.Fragment>
-            <Backdrop open={loading} sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, color: '#fff' }}>
+            <Backdrop open={loading || loadingInitial} sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, color: '#fff' }}>
                 <CircularProgress color="inherit" />
-                <Typography sx={{ ml: 2 }}>Actualizando...</Typography>
+                <Typography sx={{ ml: 2 }}>{loadingInitial ? 'Cargando Entradas...' : 'Actualizando...'}</Typography>
             </Backdrop>
 
             <Grid container spacing={2}>
@@ -282,9 +401,22 @@ const EntradasPage = ({ entries, availableTags, setAvailableTags, onUpdateEntrie
                             }}
                         />
                     </Paper>
-                    <NotebookList notebooks={notebooks} selectedNotebookId={selectedNotebookId} onSelect={setSelectedNotebookId} onCreate={() => requestOpenNotebookDialog()} onDelete={nb => setNotebookToDelete(nb)} />
+                    <NotebookList
+                        notebooks={notebooks}
+                        selectedNotebookId={selectedNotebookId}
+                        onSelect={setSelectedNotebookId}
+                        onCreate={handleOpenCreateNotebookDialog}
+                        onDelete={notebook => setNotebookToDelete(notebook)}
+                        onEdit={handleOpenEditNotebookDialog}
+                    />
                     <Button variant="contained" fullWidth sx={{ mb: 2, backgroundColor: '#1976d2', color: '#fff', '&:hover': { backgroundColor: '#1565c0' } }} onClick={handleNew} disabled={mode !== 'list'} > NUEVA ENTRADA </Button>
-                    <Paper sx={{ p: 1, mb: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} onClick={() => setFiltersOpen(o => !o)}> <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>Filtros</Typography> {filtersOpen ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />} </Paper>
+                    <Paper sx={{ p: 1, mb: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} onClick={() => setFiltersOpen(o => !o)}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <FilterListIcon fontSize="small" sx={{ color: 'action.active' }} />
+                            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>Filtros</Typography>
+                        </Box>
+                        {filtersOpen ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
+                    </Paper>
                     <Collapse in={filtersOpen}>
                         <Paper sx={{ p: 2, mb: 2 }}>
                             {/* Filtros (sin cambios) */}
@@ -301,7 +433,30 @@ const EntradasPage = ({ entries, availableTags, setAvailableTags, onUpdateEntrie
                     {/* --- Renderizado Condicional por Modo --- */}
                     {mode === 'list' && (
                         <Paper sx={{ p: 2, minHeight: 'calc(100vh - 120px)', maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', bgcolor: '#f8fafc', boxShadow: 1, borderRadius: 2 }}>
-                            {filteredEntries.length > 0 ? ( <EntryList entries={filteredEntries} onSelect={handleSelectEntry} selectedEntry={null} /> ) : ( <Typography sx={{textAlign: 'center', mt: 4, color: 'text.secondary'}}> No hay entradas para mostrar {selectedNotebookId !== 'all' || filter.tag || filter.year || filter.month || filter.day ? 'con los filtros actuales' : ''}. </Typography> )}
+                            {loadingInitial ? (
+                                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 5 }}><CircularProgress /></Box>
+                            ) : filteredEntries.length > 0 ? (
+                                <>
+                                    <EntryList entries={filteredEntries} onSelect={handleSelectEntry} selectedEntry={null} />
+                                    {hasMore && (
+                                        <Box sx={{ textAlign: 'center', mt: 2, mb: 1 }}>
+                                            <Button
+                                                onClick={loadMoreEntries}
+                                                disabled={loadingMore}
+                                                variant="contained"
+                                                size="medium"
+                                                sx={{ backgroundColor: 'primary.main', color: '#fff', '&:hover': { backgroundColor: 'primary.dark' } }}
+                                            >
+                                                {loadingMore ? <CircularProgress size={24} color="inherit" /> : 'Cargar Más Entradas'}
+                                            </Button>
+                                        </Box>
+                                    )}
+                                </>
+                            ) : (
+                                <Typography sx={{ textAlign: 'center', mt: 4, color: 'text.secondary' }}>
+                                    No hay entradas para mostrar
+                                </Typography>
+                            )}
                         </Paper>
                     )}
 
@@ -347,10 +502,12 @@ const EntradasPage = ({ entries, availableTags, setAvailableTags, onUpdateEntrie
 
             {/* --- Dialogs (sin cambios) --- */}
             <NotebookDialog
-                open={notebookDialogOpen}
-                onClose={() => { setNotebookDialogOpen(false); setOpenNotebookDialogRequest(null); }}
-                onSave={handleCreateNotebook}
-                existingNotebooks={notebooks} // <-- AÑADIDO
+                open={isEditNotebookDialogOpen}
+                onClose={handleCloseNotebookDialog}
+                onSave={handleSaveNotebook}
+                existingNotebooks={notebooks}
+                initialName={notebookToEdit ? notebookToEdit.nombre : ''}
+                isEditMode={!!notebookToEdit}
             />
             {notebookToDelete && (
                 <Dialog open={!!notebookToDelete} onClose={() => setNotebookToDelete(null)}>

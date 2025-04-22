@@ -41,4 +41,29 @@ export async function moveEntriesToGeneral(notebookId) {
   await Promise.all(updates);
 }
 
-// Futuras funciones: updateNotebook, etc.
+/**
+ * Actualiza el nombre de un cuaderno existente.
+ * @param {string} notebookId ID del cuaderno a actualizar.
+ * @param {string} newName Nuevo nombre para el cuaderno.
+ * @returns {Promise<void>}
+ */
+export async function updateNotebookName(notebookId, newName) {
+    const user = auth.currentUser;
+    if (!user) throw new Error('No autenticado');
+    if (!notebookId) throw new Error('Se requiere ID del cuaderno');
+    const trimmedName = newName.trim();
+    if (!trimmedName) throw new Error('El nuevo nombre no puede estar vacío');
+    const notebookRef = doc(db, 'users', user.uid, 'notebooks', notebookId);
+    try {
+        await updateDoc(notebookRef, {
+            nombre: trimmedName,
+            fechaActualizacion: serverTimestamp()
+        });
+        console.log(`Notebook ${notebookId} updated with name: ${trimmedName}`);
+    } catch (error) {
+        console.error("Error updating notebook name: ", error);
+        throw error;
+    }
+}
+
+// Futuras funciones: etc.

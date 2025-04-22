@@ -7,7 +7,7 @@ import PersonasLugaresPage from './pages/PersonasLugaresPage';
 
 // Removed unused imports for deleted components (Sidebar, ProfileEditor, AddProfileModal, PersonName, Dashboard)
 
-const AppLayout = ({ entries, availableTags, setAvailableTags, onUpdateEntries, handleDeleteEntry }) => {
+const AppLayout = ({ availableTags, setAvailableTags }) => {
   const [tab, setTab] = useState(0);
   const handleTabChange = (e, v) => setTab(v);
 
@@ -24,15 +24,12 @@ const AppLayout = ({ entries, availableTags, setAvailableTags, onUpdateEntries, 
         </Tabs>
       </AppBar>
       <Box sx={{ p: 3 }}>
-        {tab === 0 && <EntradasPage 
-          entries={entries} 
-          availableTags={availableTags} 
-          setAvailableTags={setAvailableTags} 
-          onUpdateEntries={onUpdateEntries}
-          handleDelete={entry => handleDeleteEntry(entry?.id)} 
+        {tab === 0 && <EntradasPage
+          availableTags={availableTags}
+          setAvailableTags={setAvailableTags}
         />}
         {tab === 1 && <EtiquetasPage availableTags={availableTags} setAvailableTags={setAvailableTags} />}
-        {tab === 2 && <PersonasLugaresPage entries={entries} />}
+        {tab === 2 && <PersonasLugaresPage />}
       </Box>
     </Box>
   );
