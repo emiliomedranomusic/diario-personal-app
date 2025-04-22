@@ -67,6 +67,21 @@ export default function ProfileList({ profiles, entries = [], onEdit, onDelete }
     setConfirmOpen(false);
   };
 
+  const renderSecondaryInfo = (profile) => {
+    let parts = [];
+    if (profile.tipo === 'persona' && profile.genero) parts.push(`Género: ${profile.genero}`);
+    if (profile.tipo === 'persona' && profile.relacion) parts.push(`Relación: ${profile.relacion}`);
+    if (profile.tipo === 'persona' && profile.lugarAsociadoNombre) {
+        parts.push(`Lugar: ${profile.lugarAsociadoNombre}`);
+    }
+    if (profile.tipo === 'lugar' && profile.tipoLugar) parts.push(`Tipo: ${profile.tipoLugar}`);
+    if (profile.tipo === 'festividad' && profile.tipoFestividad) parts.push(`Tipo: ${profile.tipoFestividad}`);
+    if (profile.tipo === 'festividad' && profile.fechaFestividad) parts.push(`Fecha: ${profile.fechaFestividad}`);
+    if (profile.notas) parts.push(`Notas: ${profile.notas.substring(0, 100)}${profile.notas.length > 100 ? '...' : ''}`);
+
+    return parts.join(' | ');
+  };
+
   return (
     <Box>
       {grouped.map(group => (
@@ -126,7 +141,7 @@ export default function ProfileList({ profiles, entries = [], onEdit, onDelete }
                           ))}
                         </Box>
                       )}
-                      {profile.notas && <span style={{ color: '#888' }}>{profile.notas}</span>}
+                      {renderSecondaryInfo(profile)}
                     </>
                   }
                 />

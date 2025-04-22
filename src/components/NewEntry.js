@@ -262,16 +262,47 @@ const NewEntry = ({
             {/* Dialogs */}
              <Dialog open={isMentionModalOpen} onClose={handleCloseMentionModal} maxWidth="xs" fullWidth>
                  <DialogTitle> Selecciona o crea un perfil <IconButton onClick={handleCloseMentionModal} sx={{ position: 'absolute', right: 8, top: 8 }}> <CloseIcon /> </IconButton> </DialogTitle>
-                 <DialogContent> <TextField autoFocus margin="dense" label="Buscar o escribir nombre nuevo" fullWidth value={mentionQuery} onChange={handleMentionQueryChange} sx={{ mb: 2 }} /> <List sx={{ maxHeight: 200, overflow: 'auto', mb: 2, border: '1px solid #eee', borderRadius: 1 }}> {filteredProfiles.map(profile => (<ListItemButton key={profile.id} onClick={() => handleSelectProfile(profile)}> <ListItemText primary={profile.nombre} secondary={profile.tipo || 'Otro'} /> </ListItemButton>))} {filteredProfiles.length === 0 && mentionQuery && (<ListItem><ListItemText secondary="No hay perfiles existentes con ese nombre." /></ListItem>)} {filteredProfiles.length === 0 && !mentionQuery && (<ListItem><ListItemText secondary="Escribe para buscar o crear." /></ListItem>)} </List> <Button
-                 variant="contained"
-                 color="primary"
-                 fullWidth
-                 onClick={() => handleCreateProfileFromMention(mentionQuery)}
-                 disabled={!mentionQuery.trim()}
-                 sx={{ textTransform: 'none'}}
-                 >
-                 Crear perfil: "{mentionQuery.trim() || '...'}"
-             </Button> </DialogContent>
+                 <DialogContent>
+                     <TextField autoFocus margin="dense" label="Buscar o escribir nombre nuevo" fullWidth value={mentionQuery} onChange={handleMentionQueryChange} sx={{ mb: 2 }} />
+                     <List dense sx={{ maxHeight: 250, overflow: 'auto', mb: 2, border: '1px solid #eee', borderRadius: 1 }}>
+                         {filteredProfiles.map(profile => {
+                             let secondaryInfo = [];
+                             if (profile.tipo) {
+                                 secondaryInfo.push(profile.tipo.charAt(0).toUpperCase() + profile.tipo.slice(1));
+                             }
+                             // Lógica específica para Persona
+                             if (profile.tipo === 'persona') {
+                                 if (profile.relacion) { secondaryInfo.push(`Rel: ${profile.relacion}`); }
+                                 // Añadir lugar asociado si existe
+                                 if (profile.lugarAsociadoNombre) {
+                                     secondaryInfo.push(`Lugar: ${profile.lugarAsociadoNombre}`);
+                                 }
+                             }
+                             else if (profile.tipo === 'lugar' && profile.tipoLugar) {
+                                 secondaryInfo.push(`Tipo: ${profile.tipoLugar}`);
+                             } else if (profile.tipo === 'festividad' && profile.tipoFestividad) {
+                                 secondaryInfo.push(`Tipo: ${profile.tipoFestividad}`);
+                             } else if (profile.tipo === 'festividad' && profile.fechaFestividad) {
+                                 secondaryInfo.push(`Fecha: ${profile.fechaFestividad}`);
+                             }
+                             if (secondaryInfo.length <= 1 && profile.notas) {
+                                secondaryInfo.push(`Notas: ${profile.notas.substring(0, 30)}...`);
+                             }
+                             const secondaryText = secondaryInfo.join(' | ');
+                             return (
+                                 <ListItemButton key={profile.id} onClick={() => handleSelectProfile(profile)}>
+                                     <ListItemText
+                                         primary={profile.nombre}
+                                         secondary={secondaryText || 'Sin detalles'}
+                                         primaryTypographyProps={{ fontWeight: 500 }}
+                                         secondaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }}
+                                     />
+                                 </ListItemButton>
+                             );
+                         })}
+                     </List>
+                     <Button variant="contained" color="primary" fullWidth onClick={() => handleCreateProfileFromMention(mentionQuery)} disabled={!mentionQuery.trim()} sx={{ textTransform: 'none'}}> Crear perfil: "{mentionQuery.trim() || '...'}" </Button>
+                 </DialogContent>
              </Dialog>
              <ProfileDialog
                  open={isProfileDialogOpen}

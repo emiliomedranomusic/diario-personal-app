@@ -1,20 +1,42 @@
 // src/components/NotebookDialog.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField } from '@mui/material';
 
-export default function NotebookDialog({ open, onClose, onSave }) {
+export default function NotebookDialog({ open, onClose, onSave, existingNotebooks = [] }) {
   const [nombre, setNombre] = useState('');
+  const [error, setError] = useState('');
 
-  const handleSave = () => {
-    if (nombre.trim()) {
-      onSave(nombre.trim());
-      setNombre(''); // Limpiar después de guardar
-      // onClose(); // El padre debería llamar a onClose después de que onSave termine
+  useEffect(() => {
+    if (open) {
+      setNombre('');
+      setError('');
     }
+  }, [open]);
+
+  const attemptSave = () => {
+    const trimmedName = nombre.trim();
+    if (!trimmedName) {
+      setError('El nombre no puede estar vacío.');
+      return;
+    }
+    const isDuplicate = existingNotebooks.some(nb => nb.nombre.toLowerCase() === trimmedName.toLowerCase());
+    if (isDuplicate) {
+      setError(`El cuaderno "${trimmedName}" ya existe.`);
+      return;
+    }
+    setError('');
+    onSave(trimmedName);
   };
+
   const handleClose = () => {
-    setNombre(''); // Limpiar al cancelar
     onClose();
+  };
+
+  const handleChange = (e) => {
+    setNombre(e.target.value);
+    if (error) {
+      setError('');
+    }
   };
 
   return (
@@ -28,31 +50,17 @@ export default function NotebookDialog({ open, onClose, onSave }) {
           type="text"
           fullWidth
           value={nombre}
-          onChange={e => setNombre(e.target.value)}
-          onKeyDown={(e) => { // Allow Enter to save
-              if (e.key === 'Enter' && nombre.trim()) {
-                  handleSave();
-              }
-          }}
+          onChange={handleChange}
+          onKeyDown={(e) => { if (e.key === 'Enter') { attemptSave(); } }}
+          required
+          error={!!error}
+          helperText={error || "Introduce un nombre único."}
+          sx={{ mt: 1 }}
         />
       </DialogContent>
-      <DialogActions sx={{ p: 2 }}> {/* Add padding */}
-         {/* --- STYLED Buttons --- */}
-        <Button
-            onClick={handleClose}
-            variant="contained" // Contained for solid background
-            sx={{ backgroundColor: '#757575', color: '#fff', '&:hover': { backgroundColor: '#616161' } }} // GRAY
-         >
-             Cancelar
-         </Button>
-        <Button
-            onClick={handleSave}
-            variant="contained" // Contained for solid background
-            disabled={!nombre.trim()}
-            sx={{ backgroundColor: '#1976d2', color: '#fff', '&:hover': { backgroundColor: '#1565c0' } }} // BLUE (Primary action)
-        >
-          Guardar
-        </Button>
+      <DialogActions sx={{ p: 2 }}>
+        <Button onClick={handleClose} variant="contained" sx={{ backgroundColor: '#757575', color: '#fff', '&:hover': { backgroundColor: '#616161' } }}>Cancelar</Button>
+        <Button onClick={attemptSave} variant="contained" disabled={!nombre.trim()} sx={{ backgroundColor: '#1976d2', color: '#fff', '&:hover': { backgroundColor: '#1565c0' } }}>Guardar</Button>
       </DialogActions>
     </Dialog>
   );

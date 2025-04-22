@@ -39,14 +39,16 @@ export const addProfile = async (profileData) => {
     const { id, ...dataToSave } = profileData;
     const nombreLower = dataToSave.nombre ? dataToSave.nombre.trim().toLowerCase() : '';
     if (!nombreLower) throw new Error("El nombre del perfil no puede estar vacío");
+
     try {
         const docRef = await addDoc(profilesRef, {
-            ...dataToSave,
+            ...dataToSave, // <-- lugarAsociadoNombre vendrá aquí si existe
             nombre: dataToSave.nombre.trim(),
             nombreLower: nombreLower,
             fechaCreacion: serverTimestamp()
         });
         console.log("Profile added with ID: ", docRef.id);
+        // Devolver objeto completo incluyendo el nuevo campo si se guardó
         return { id: docRef.id, ...dataToSave, nombreLower };
     } catch (error) { console.error("Error adding profile: ", error); throw error; }
 };
@@ -64,7 +66,7 @@ export const updateProfile = async (profileId, profileData) => {
     }
     try {
         await updateDoc(profileRef, {
-            ...dataToUpdate,
+            ...dataToUpdate, // <-- lugarAsociadoNombre se actualizará aquí si existe
             fechaActualizacion: serverTimestamp()
         });
         console.log("Profile updated: ", profileId);
@@ -80,11 +82,12 @@ export const deleteProfile = async (profileId, cleanReferences = false) => {
 
     try {
         const batch = writeBatch(db);
+
+        console.log(`Marking profile ${profileId} for deletion.`);
         batch.delete(profileRef);
 
         if (cleanReferences) {
             console.log(`Attempting to clean references for profile ${profileId}`);
-            // *** LA CONSULTA CLAVE ***
             const q = query(entriesRef, where('profileRefs', 'array-contains', profileId));
 
             console.log(`Querying entries containing profileRef: ${profileId}`);
@@ -101,8 +104,11 @@ export const deleteProfile = async (profileId, cleanReferences = false) => {
             });
         }
         await batch.commit();
-        console.log("Profile deleted (and references cleaned if requested): ", profileId);
-    } catch (error) { console.error("Error deleting profile and/or cleaning references: ", error); throw error; }
+        console.log('Profile deleted (and references cleaned if requested): ', profileId);
+    } catch (error) {
+        console.error('Error deleting profile and/or cleaning references: ', error);
+        throw error;
+    }
 };
 
 export const findProfileByNameExact = async (name) => {

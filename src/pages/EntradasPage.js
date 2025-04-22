@@ -185,14 +185,6 @@ const EntradasPage = ({ entries, availableTags, setAvailableTags, onUpdateEntrie
              if (selectedNotebookId === notebook.id) {
                  setSelectedNotebookId('all');
              }
-            // *** QUITAR LLAMADA DIRECTA a fetchAndUpdateNotebooks ***
-            // await fetchAndUpdateNotebooks(false); <--- ELIMINADO
-            // Confiamos en que el listener de 'entries' actualizará la UI.
-            // Si sigue sin funcionar, como último recurso, podríamos añadir un pequeño delay
-            // y luego llamar a fetchAndUpdateNotebooks, pero idealmente no es necesario.
-            // Ejemplo (último recurso):
-            // setTimeout(() => fetchAndUpdateNotebooks(false), 500);
-
         } catch (error) {
             console.error("Error deleting notebook:", error);
             setSnackbar({ open: true, message: `Error eliminando cuaderno: ${error.message}`, severity: 'error' });
@@ -309,7 +301,12 @@ const EntradasPage = ({ entries, availableTags, setAvailableTags, onUpdateEntrie
             </Grid>
 
             {/* --- Dialogs (sin cambios) --- */}
-            <NotebookDialog open={notebookDialogOpen} onClose={() => { setNotebookDialogOpen(false); setOpenNotebookDialogRequest(null); }} onSave={handleCreateNotebook} />
+            <NotebookDialog
+                open={notebookDialogOpen}
+                onClose={() => { setNotebookDialogOpen(false); setOpenNotebookDialogRequest(null); }}
+                onSave={handleCreateNotebook}
+                existingNotebooks={notebooks} // <-- AÑADIDO
+            />
             {notebookToDelete && (
                 <Dialog open={!!notebookToDelete} onClose={() => setNotebookToDelete(null)}>
                     <DialogTitle>Eliminar Cuaderno</DialogTitle>
