@@ -110,3 +110,14 @@
 .ql-toolbar svg[width="200px"], .ql-toolbar svg[height="200px"], .ql-toolbar svg[width="100%"], .ql-toolbar svg[height="100%"] {
   display: none !important;
 }
+
+/* --- Estilos para Imágenes dentro del Editor Quill --- */
+.ql-editor img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  margin-bottom: 1em;
+  /* max-height: 70vh; */
+}

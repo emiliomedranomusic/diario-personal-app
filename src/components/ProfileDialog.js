@@ -11,6 +11,7 @@ import LabelIcon from '@mui/icons-material/Label';
 import EventIcon from '@mui/icons-material/Event';
 import PhotoCamera from '@mui/icons-material/PhotoCamera';
 import SnackbarAlert from './SnackbarAlert';
+import { uploadImageToStorage } from '../utils/uploadImageToStorage';
 
 const tipos = [
     { value: 'persona', label: 'Persona', icon: <PersonIcon /> },
@@ -34,6 +35,8 @@ export default function ProfileDialog({ open, onClose, onSave, onDelete, initial
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
     const [currentEtiquetaInput, setCurrentEtiquetaInput] = useState('');
     const [nombreError, setNombreError] = useState('');
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [isUploading, setIsUploading] = useState(false);
 
     useEffect(() => {
         if (open) {
@@ -105,7 +108,31 @@ export default function ProfileDialog({ open, onClose, onSave, onDelete, initial
         }
     };
 
-    const isSaveDisabled = !nombre.trim() || !!nombreError;
+    // Handler para subir foto de perfil
+    const handlePhotoUpload = async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) {
+            setSnackbar({ open: true, message: 'La imagen debe ser menor a 5MB', severity: 'error' });
+            return;
+        }
+        setIsUploading(true);
+        setUploadProgress(0);
+        setSnackbar({ open: true, message: 'Subiendo foto de perfil...', severity: 'info' });
+        try {
+            const url = await uploadImageToStorage(file, 'profile_pics', (progress) => setUploadProgress(progress));
+            setFotoUrl(url);
+            setSnackbar({ open: true, message: 'Foto subida correctamente', severity: 'success' });
+        } catch (err) {
+            setSnackbar({ open: true, message: `Error subiendo foto: ${err.message || 'Error desconocido'}`, severity: 'error' });
+        } finally {
+            setIsUploading(false);
+            setUploadProgress(0);
+            event.target.value = null;
+        }
+    };
+
+    const isSaveDisabled = !nombre.trim() || !!nombreError || isUploading;
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -144,7 +171,27 @@ export default function ProfileDialog({ open, onClose, onSave, onDelete, initial
                                     )
                                 }}
                             />
+                            <Button
+                                variant="outlined"
+                                component="label"
+                                startIcon={<PhotoCamera />}
+                                size="small"
+                                disabled={isUploading}
+                                sx={{ mt: 0, whiteSpace: 'nowrap' }}
+                            >
+                                {isUploading ? 'Subiendo...' : 'Subir Foto'}
+                                <input hidden accept="image/*" type="file" onChange={handlePhotoUpload} />
+                            </Button>
                         </Box>
+                        {isUploading && (
+                            <Box sx={{ width: '100%', mt: 1 }}>
+                                <Box sx={{ height: 8, background: '#eee', borderRadius: 4, overflow: 'hidden' }}>
+                                    <Box sx={{ width: `${uploadProgress}%`, height: '100%', background: '#1976d2', transition: 'width 0.2s' }} />
+                                </Box>
+                                <Typography variant="caption" sx={{ ml: 1 }}>{Math.round(uploadProgress)}%</Typography>
+                            </Box>
+                        )}
+                        <Typography variant="caption" display="block" sx={{mt: 0.5}}>Máximo 5MB</Typography>
                     </Grid>
                     {tipo === 'persona' && (
                         <>

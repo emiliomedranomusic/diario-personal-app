@@ -1,8 +1,9 @@
-import { db, auth } from '../firebase';
+import { db, auth, storage } from '../firebase';
 import {
     collection, query, orderBy, limit, getDocs,
     startAfter, doc, deleteDoc, getDoc
 } from 'firebase/firestore';
+import { ref, deleteObject } from 'firebase/storage';
 
 const getCurrentUserId = () => {
     const user = auth.currentUser;
@@ -41,6 +42,31 @@ export const deleteEntryById = async (entryId) => {
 
     const entryRef = doc(db, 'users', userId, 'entries', entryId);
     try {
+        // 1. Obtener la entrada para acceder a los archivos adjuntos
+        const entryDoc = await getDoc(entryRef);
+        if (!entryDoc.exists()) {
+            throw new Error("La entrada no existe");
+        }
+        const entryData = entryDoc.data();
+        const attachments = entryData.attachments || [];
+
+        // 2. Eliminar cada archivo adjunto de Storage usando fullPath
+        const deletePromises = attachments.map(async (attachment) => {
+            if (!attachment.fullPath) return; // Solo si tiene fullPath
+            try {
+                const fileRef = ref(storage, attachment.fullPath);
+                await deleteObject(fileRef);
+                console.log("Archivo adjunto eliminado:", attachment.fullPath);
+            } catch (error) {
+                console.error("Error eliminando archivo adjunto:", error);
+                // Continuar con la eliminación aunque falle un archivo
+            }
+        });
+
+        // 3. Esperar a que se eliminen todos los archivos
+        await Promise.all(deletePromises);
+
+        // 4. Eliminar la entrada de Firestore
         await deleteDoc(entryRef);
         console.log("Entry deleted successfully:", entryId);
     } catch (error) {

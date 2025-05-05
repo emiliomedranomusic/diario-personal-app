@@ -1,5 +1,5 @@
 // src/components/NewEntry.js
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { db, auth } from '../firebase';
 import { collection, addDoc, doc, updateDoc, query, getCountFromServer } from 'firebase/firestore';
 import {
@@ -9,12 +9,20 @@ import {
     Box,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
-import ReactQuill from 'react-quill';
+import ReactQuill, { Quill } from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
+import ImageResize from 'quill-image-resize-module-react';
 import { extractMentions } from '../data/profiles'; 
 import ProfileDialog from './ProfileDialog';
 import NotebookSelector from './NotebookSelector';
 import { subscribeToUserProfiles, addProfile, findProfileByNameExact } from '../services/profileService';
+import { uploadImageToStorage } from '../utils/uploadImageToStorage';
+import DeleteIcon from '@mui/icons-material/Delete';
+import { ref as storageRef, deleteObject } from 'firebase/storage';
+import { storage } from '../firebase';
+
+// --- REGISTRO DEL MÓDULO (después de todos los imports) ---
+Quill.register('modules/imageResize', ImageResize);
 
 // --- CONSTANTES FUERA DEL COMPONENTE ---
 const currentYear = new Date().getFullYear();
@@ -62,6 +70,15 @@ const NewEntry = ({
     const [profileDialogEdit, setProfileDialogEdit] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const isNewEntryMode = useRef(!entry);
+    const [imageUploadProgress, setImageUploadProgress] = useState(0);
+    const [isImageUploading, setIsImageUploading] = useState(false);
+    const [attachments, setAttachments] = useState([]);
+    const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB por archivo
+    const ALLOWED_TYPES = [
+        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+        'application/pdf', 'audio/mpeg', 'audio/mp3', 'audio/wav',
+        'text/plain', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
 
     const parseFechaStable = useCallback(parseFecha, []);
 
@@ -82,6 +99,7 @@ const NewEntry = ({
         setFecha(parseFechaStable(entry));
         const initialNotebookId = entry?.notebookId || 'default';
         setNotebookId(initialNotebookId);
+        setAttachments(entry?.attachments || []);
         if (isNewEntryMode.current && quillRef.current) { const editor = quillRef.current.getEditor(); editor.setContents([], 'silent'); }
     }, [entry, parseFechaStable]);
 
@@ -92,8 +110,62 @@ const NewEntry = ({
 
     // --- Handlers ---
     const handleTagsChange = (event) => { setSelectedTags(typeof event.target.value === 'string' ? event.target.value.split(',') : event.target.value); };
-    const quillModules = { toolbar: [[{ 'header': [1, 2, 3, false] }], ['bold', 'italic', 'underline', 'strike'], [{ 'list': 'ordered'}, { 'list': 'bullet' }], [{ 'align': [] }], ['blockquote', 'code-block'], [{ 'color': [] }, { 'background': [] }], ['link'], ['clean']] };
-    const quillFormats = [ 'header', 'bold', 'italic', 'underline', 'strike', 'list', 'bullet', 'align', 'blockquote', 'code-block', 'color', 'background', 'link', 'clean'];
+    const imageHandler = useCallback(() => {
+        const input = document.createElement('input');
+        input.setAttribute('type', 'file');
+        input.setAttribute('accept', 'image/*');
+        input.click();
+        input.onchange = async () => {
+            const file = input.files ? input.files[0] : null;
+            if (!file) return;
+            if (file.size > 5 * 1024 * 1024) {
+                setSnackbar({ open: true, message: 'La imagen debe ser menor a 5MB', severity: 'error' });
+                return;
+            }
+            setIsImageUploading(true);
+            setImageUploadProgress(0);
+            setSnackbar({ open: true, message: 'Subiendo imagen...', severity: 'info' });
+            if (quillRef.current) quillRef.current.getEditor().enable(false);
+            try {
+                const url = await uploadImageToStorage(file, 'uploads', (progress) => setImageUploadProgress(progress));
+                if (quillRef.current) {
+                    const quill = quillRef.current.getEditor();
+                    quill.enable(true);
+                    const range = quill.getSelection(true);
+                    quill.insertEmbed(range.index, 'image', url, 'user');
+                    quill.setSelection(range.index + 1, 0, 'user');
+                    setContent(quill.root.innerHTML);
+                }
+                setSnackbar({ open: true, message: 'Imagen insertada.', severity: 'success' });
+            } catch (error) {
+                setSnackbar({ open: true, message: `Error al subir imagen: ${error.message || 'Error desconocido'}`, severity: 'error' });
+                if (quillRef.current) quillRef.current.getEditor().enable(true);
+            } finally {
+                setIsImageUploading(false);
+                setImageUploadProgress(0);
+            }
+        };
+    }, [setSnackbar]);
+
+    const quillModules = useMemo(() => ({
+        toolbar: {
+            container: [
+                [{ 'header': [1, 2, 3, false] }],
+                ['bold', 'italic', 'underline', 'strike'],
+                [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                [{ 'align': [] }],
+                ['blockquote', 'code-block'],
+                [{ 'color': [] }, { 'background': [] }],
+                ['link'],
+                ['clean']
+            ]
+        },
+        imageResize: {
+            parchment: Quill.import('parchment'),
+            modules: [ 'Resize', 'DisplaySize', 'Toolbar' ]
+        }
+    }), []);
+    const quillFormats = [ 'header', 'bold', 'italic', 'underline', 'strike', 'list', 'bullet', 'align', 'blockquote', 'code-block', 'color', 'background', 'link', 'image', 'clean'];
 
     const handleMentionLogic = useCallback(() => {
          if (quillRef.current) {
@@ -155,6 +227,48 @@ const NewEntry = ({
         }
     }, [profileDialogEdit, mentionPosition, handleSelectProfile, setSnackbar]);
 
+    // --- Nuevo: Eliminar adjunto individual ---
+    const handleRemoveAttachment = async (idx) => {
+        const att = attachments[idx];
+        if (att && att.fullPath) {
+            try {
+                await deleteObject(storageRef(storage, att.fullPath));
+                setSnackbar({ open: true, message: `Adjunto eliminado: ${att.name}`, severity: 'success' });
+            } catch (err) {
+                setSnackbar({ open: true, message: `Error eliminando archivo: ${att.name}`, severity: 'error' });
+            }
+        }
+        setAttachments(prev => prev.filter((_, i) => i !== idx));
+    };
+
+    const handleAttachFiles = async (event) => {
+        const files = Array.from(event.target.files);
+        let newAttachments = [];
+        for (const file of files) {
+            if (file.size > MAX_ATTACHMENT_SIZE) {
+                setSnackbar({ open: true, message: `El archivo '${file.name}' excede el límite de 10MB.`, severity: 'error' });
+                continue;
+            }
+            if (!ALLOWED_TYPES.some(type => file.type.startsWith(type.split('/')[0]))) {
+                setSnackbar({ open: true, message: `Tipo de archivo no permitido: ${file.name}`, severity: 'error' });
+                continue;
+            }
+            try {
+                const result = await uploadImageToStorage(file, 'attachments');
+                newAttachments.push({
+                    name: result.name,
+                    url: result.url,
+                    type: result.type,
+                    fullPath: result.fullPath
+                });
+            } catch (err) {
+                setSnackbar({ open: true, message: `Error subiendo '${file.name}': ${err.message}`, severity: 'error' });
+            }
+        }
+        setAttachments(prev => [...prev, ...newAttachments]);
+        event.target.value = null;
+    };
+
     const saveEntry = async () => {
         if (isSaving) return; setIsSaving(true);
         try {
@@ -212,10 +326,11 @@ const NewEntry = ({
                 content,
                 tags: selectedTags,
                 createdAt: dateToSave,
-                profileRefs: finalProfileRefs, // Guardar array de IDs combinado/final
+                profileRefs: finalProfileRefs,
                 notebookId: notebookId || 'default',
-                updatedAt: new Date()
-             };
+                updatedAt: new Date(),
+                attachments: attachments || []
+            };
 
             // 6. Guardar/Actualizar entrada en Firestore
             if (entry && entry.id) {
@@ -239,8 +354,40 @@ const NewEntry = ({
         <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 'calc(100vh - 100px)', minHeight: 500, boxShadow: 3, borderRadius: 2 }}>
             <Typography variant="h6" gutterBottom sx={{ mb: 1, flexShrink: 0 }}> {entry ? 'Editar Entrada' : 'Nueva Entrada'} </Typography>
             <TextField id="new-entry-title" fullWidth label="Título" value={title} onChange={(e) => setTitle(e.target.value)} sx={{ mb: 2, flexShrink: 0 }} variant="outlined" size="small" />
-            <Box sx={{ flexGrow: 1, mb: 2, border: '1px solid #ccc', borderRadius: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 250 }}>
+            <Box sx={{ flexGrow: 1, mb: 2, border: '1px solid #ccc', borderRadius: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 250, position: 'relative' }}>
                  <ReactQuill ref={quillRef} theme="snow" value={content} onChange={handleContentChange} modules={quillModules} formats={quillFormats} style={{ flexGrow: 1, border: 'none', display: 'flex', flexDirection: 'column' }} className="quill-editor-container" />
+                 {isImageUploading && (
+                    <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', bgcolor: 'rgba(255,255,255,0.7)', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <Typography variant="body2" sx={{ mb: 1 }}>Subiendo imagen... {Math.round(imageUploadProgress)}%</Typography>
+                        <Box sx={{ width: '60%', height: 8, background: '#eee', borderRadius: 4, overflow: 'hidden' }}>
+                            <Box sx={{ width: `${imageUploadProgress}%`, height: '100%', background: '#1976d2', transition: 'width 0.2s' }} />
+                        </Box>
+                    </Box>
+                 )}
+            </Box>
+            {/* --- Adjuntos tipo Gmail --- */}
+            <Box sx={{ mt: 2, mb: 2 }}>
+                <Button variant="outlined" component="label" size="small" sx={{ mb: 1 }}>
+                    Adjuntar archivo
+                    <input hidden multiple type="file" onChange={handleAttachFiles} />
+                </Button>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                    {attachments.map((att, idx) => (
+                        <Box key={idx} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 120, position: 'relative' }}>
+                            <IconButton size="small" sx={{ position: 'absolute', top: 0, right: 0, zIndex: 2, bgcolor: '#fff', border: '1px solid #ccc', p: 0.5 }} onClick={() => handleRemoveAttachment(idx)}>
+                                <DeleteIcon fontSize="small" />
+                            </IconButton>
+                            {att.type && att.type.startsWith('image/') ? (
+                                <img src={att.url} alt={att.name} style={{ width: 100, height: 70, objectFit: 'cover', borderRadius: 4, marginBottom: 4, border: '1px solid #ccc' }} />
+                            ) : (
+                                <Box sx={{ width: 100, height: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f5', borderRadius: 4, border: '1px solid #ccc', mb: 0.5 }}>
+                                    <Typography variant="caption" sx={{ textAlign: 'center' }}>{att.name ? att.name.split('.').pop().toUpperCase() : 'ARCHIVO'}</Typography>
+                                </Box>
+                            )}
+                            <a href={att.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, textDecoration: 'underline', wordBreak: 'break-all' }}>{att.name && att.name.length > 16 ? att.name.slice(0, 13) + '...' : att.name}</a>
+                        </Box>
+                    ))}
+                </Box>
             </Box>
             <Box sx={{ mt: 'auto', pt: 2, borderTop: '1px solid #eee', flexShrink: 0 }}>
                  <Grid container spacing={2} alignItems="center">
