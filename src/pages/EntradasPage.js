@@ -417,8 +417,16 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
                         <Button
                             variant="contained"
                             fullWidth
+                            sx={{ mb: 1, backgroundColor: '#1976d2', color: '#fff', '&:hover': { backgroundColor: '#1565c0' } }}
+                            onClick={handleNew}
+                        >
+                            NUEVA ENTRADA
+                        </Button>
+                        <Button
+                            variant="contained"
+                            fullWidth
                             onClick={() => setIsExportDialogOpen(true)}
-                            sx={{ backgroundColor: '#1976d2', color: '#fff', '&:hover': { backgroundColor: '#1565c0' } }}
+                            sx={{ backgroundColor: '#fb8c00', color: '#fff', '&:hover': { backgroundColor: '#ef6c00' } }}
                         >
                             Exportar Todo
                         </Button>
@@ -431,7 +439,6 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
                             Importar
                         </Button>
                     </Paper>
-                    <Button variant="contained" fullWidth sx={{ mb: 2, backgroundColor: '#1976d2', color: '#fff', '&:hover': { backgroundColor: '#1565c0' } }} onClick={handleNew} disabled={mode !== 'list'} > NUEVA ENTRADA </Button>
                     <Paper sx={{ p: 1, mb: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} onClick={() => setFiltersOpen(o => !o)}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                             <FilterListIcon fontSize="small" sx={{ color: 'action.active' }} />

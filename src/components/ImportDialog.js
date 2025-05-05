@@ -17,8 +17,9 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { db, storage, auth } from '../firebase';
-import { doc, setDoc, collection } from 'firebase/firestore';
+import { doc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import ReactDiffViewer from 'react-diff-viewer';
 
 const steps = ['Seleccionar archivo', 'Vista previa', 'Importar'];
 
@@ -28,39 +29,43 @@ const ImportDialog = ({ open, onClose }) => {
   const [importEntries, setImportEntries] = useState([]);
   const [selectedEntries, setSelectedEntries] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [conflict, setConflict] = useState(null);
+  const [applyToAllAction, setApplyToAllAction] = useState(null);
+  const [applyToAllChecked, setApplyToAllChecked] = useState(false);
 
   // Paso 1: Selección de archivo
   const handleFileChange = async (e) => {
-    const file = e.target.files[0];
-    setSelectedFile(file);
+    const files = Array.from(e.target.files);
+    setSelectedFile(files.length === 1 ? files[0] : null);
     setLoading(true);
     setImportEntries([]);
     setSelectedEntries([]);
-    let entries = [];
+    let allEntries = [];
     try {
-      if (!file.name.endsWith('.json')) {
-        alert('Solo se permite importar archivos exportados en formato JSON.');
-        setLoading(false);
-        setSelectedFile(null);
-        return;
+      for (const file of files) {
+        if (!file.name.endsWith('.json')) {
+          alert('Solo se permite importar archivos exportados en formato JSON.');
+          setLoading(false);
+          setSelectedFile(null);
+          return;
+        }
+        const text = await file.text();
+        let data = JSON.parse(text);
+        if (!Array.isArray(data)) {
+          data = [data];
+        }
+        const entries = data.map((entry, idx) => ({
+          id: entry.id || `json-${idx}`,
+          title: entry.title || `Nota ${idx + 1}`,
+          date: entry.date || '',
+          tags: Array.isArray(entry.tags) ? entry.tags : [],
+          content: entry.content || '',
+          attachments: Array.isArray(entry.attachments) ? entry.attachments : []
+        }));
+        allEntries = allEntries.concat(entries);
       }
-      // Parsear JSON
-      const text = await file.text();
-      let data = JSON.parse(text);
-      if (!Array.isArray(data)) {
-        // Si es un objeto individual, lo convertimos a array
-        data = [data];
-      }
-      entries = data.map((entry, idx) => ({
-        id: entry.id || `json-${idx}`,
-        title: entry.title || `Nota ${idx + 1}`,
-        date: entry.date || '',
-        tags: Array.isArray(entry.tags) ? entry.tags : [],
-        content: entry.content || '',
-        attachments: Array.isArray(entry.attachments) ? entry.attachments : []
-      }));
-      setImportEntries(entries);
-      setSelectedEntries(entries.map(e => e.id));
+      setImportEntries(allEntries);
+      setSelectedEntries(allEntries.map(e => e.id));
       setActiveStep(1);
     } catch (err) {
       alert('Error leyendo archivo: ' + err.message);
@@ -79,15 +84,114 @@ const ImportDialog = ({ open, onClose }) => {
       const user = auth.currentUser;
       if (!user) throw new Error('No autenticado');
       const entriesToImport = importEntries.filter(e => selectedEntries.includes(e.id));
-      for (const entry of entriesToImport) {
-        // Crear entrada en Firestore
+      let skipAllConflicts = false;
+      let actionForAll = null;
+      for (let i = 0; i < entriesToImport.length; i++) {
+        const entry = entriesToImport[i];
+        // Buscar conflicto por título usando la SDK moderna
+        const entriesRef = collection(db, 'users', user.uid, 'entries');
+        const q = query(entriesRef, where('title', '==', entry.title));
+        const querySnapshot = await getDocs(q);
+        let existing = null;
+        querySnapshot.forEach(docSnap => { existing = { id: docSnap.id, ...docSnap.data() }; });
+        if (existing) {
+          // Comparar contenido
+          const isSameContent = (existing.content || '') === (entry.content || '');
+          let action = actionForAll;
+          if (!skipAllConflicts) {
+            // Mostrar diálogo y esperar acción
+            // Usar una promesa con un estado local para evitar warnings de función en bucle
+            // eslint-disable-next-line no-loop-func
+            await new Promise(resolve => {
+              const handleResolve = (userAction, applyToAll) => {
+                action = userAction;
+                if (applyToAll) {
+                  skipAllConflicts = true;
+                  actionForAll = userAction;
+                }
+                setConflict(null);
+                resolve();
+              };
+              setConflict({
+                importedNote: entry,
+                existingNote: existing,
+                showDiff: !isSameContent,
+                resolve: handleResolve,
+                applyToAll: applyToAllChecked,
+                setApplyToAll: setApplyToAllChecked
+              });
+            });
+          }
+          if (action === 'replace') {
+            // Sobrescribir la nota existente
+            const entryRef = doc(db, 'users', user.uid, 'entries', existing.id);
+            let attachments = [];
+            if (entry.attachments && entry.attachments.length > 0) {
+              for (const att of entry.attachments) {
+                if (att.file && typeof att.file.async === 'function') {
+                  const blob = await att.file.async('blob');
+                  const storagePath = `attachments/${user.uid}/${Date.now()}-${att.name}`;
+                  const fileRef = storageRef(storage, storagePath);
+                  await uploadBytes(fileRef, blob);
+                  const url = await getDownloadURL(fileRef);
+                  attachments.push({ name: att.name, url, fullPath: storagePath });
+                } else if (att.url) {
+                  attachments.push(att);
+                }
+              }
+            }
+            await setDoc(entryRef, {
+              title: entry.title,
+              content: entry.content || '',
+              tags: Array.isArray(entry.tags) ? entry.tags : [],
+              createdAt: entry.date || new Date().toISOString(),
+              attachments,
+              updatedAt: new Date()
+            });
+          } else if (action === 'duplicate') {
+            // Obtener título incremental
+            const newTitle = await getNextDuplicateTitle(entry.title, user);
+            const entryRef = doc(collection(db, 'users', user.uid, 'entries'));
+            let attachments = [];
+            if (entry.attachments && entry.attachments.length > 0) {
+              for (const att of entry.attachments) {
+                if (att.file && typeof att.file.async === 'function') {
+                  const blob = await att.file.async('blob');
+                  const storagePath = `attachments/${user.uid}/${Date.now()}-${att.name}`;
+                  const fileRef = storageRef(storage, storagePath);
+                  await uploadBytes(fileRef, blob);
+                  const url = await getDownloadURL(fileRef);
+                  attachments.push({ name: att.name, url, fullPath: storagePath });
+                } else if (att.url) {
+                  attachments.push(att);
+                }
+              }
+            }
+            await setDoc(entryRef, {
+              title: newTitle,
+              content: entry.content || '',
+              tags: Array.isArray(entry.tags) ? entry.tags : [],
+              createdAt: entry.date || new Date().toISOString(),
+              attachments,
+              updatedAt: new Date()
+            });
+          } else if (action === 'skip') {
+            // Si es la última nota, continuar al paso de éxito
+            if (i === entriesToImport.length - 1) {
+              setActiveStep(2);
+              setLoading(false);
+              return;
+            }
+            continue;
+          }
+          continue;
+        }
+        // Si no hay conflicto, importar normalmente
         const entryRef = doc(collection(db, 'users', user.uid, 'entries'));
-        // Adjuntos: si vienen como archivos (ZIP), subimos a Storage y guardamos URL
         let attachments = [];
         if (entry.attachments && entry.attachments.length > 0) {
           for (const att of entry.attachments) {
             if (att.file && typeof att.file.async === 'function') {
-              // Es un archivo de ZIP
               const blob = await att.file.async('blob');
               const storagePath = `attachments/${user.uid}/${Date.now()}-${att.name}`;
               const fileRef = storageRef(storage, storagePath);
@@ -95,7 +199,6 @@ const ImportDialog = ({ open, onClose }) => {
               const url = await getDownloadURL(fileRef);
               attachments.push({ name: att.name, url, fullPath: storagePath });
             } else if (att.url) {
-              // Es un adjunto de JSON
               attachments.push(att);
             }
           }
@@ -151,11 +254,11 @@ const ImportDialog = ({ open, onClose }) => {
         {activeStep === 0 && (
           <Box sx={{ p: 2 }}>
             <Typography variant="body1" sx={{ mb: 2 }}>
-              Selecciona un archivo exportado previamente (<b>solo JSON</b>):
+              Selecciona uno o varios archivos exportados previamente (<b>solo JSON</b>):
             </Typography>
             <Button variant="contained" component="label">
-              Seleccionar archivo
-              <input type="file" hidden accept=".json" onChange={handleFileChange} />
+              Seleccionar archivo(s)
+              <input type="file" hidden accept=".json" multiple onChange={handleFileChange} />
             </Button>
             {selectedFile && (
               <Typography variant="body2" sx={{ mt: 2 }}>
@@ -202,6 +305,17 @@ const ImportDialog = ({ open, onClose }) => {
             )}
           </Box>
         )}
+        {conflict && (
+          <ConflictDialog
+            open={!!conflict}
+            importedNote={conflict.importedNote}
+            existingNote={conflict.existingNote}
+            showDiff={conflict.showDiff}
+            onAction={action => conflict.resolve(action, applyToAllChecked)}
+            applyToAll={applyToAllChecked}
+            setApplyToAll={setApplyToAllChecked}
+          />
+        )}
       </DialogContent>
       <DialogActions>
         {activeStep > 0 && activeStep < 2 && (
@@ -218,6 +332,65 @@ const ImportDialog = ({ open, onClose }) => {
       </DialogActions>
     </Dialog>
   );
+};
+
+const ConflictDialog = ({ open, importedNote, existingNote, onAction, showDiff, applyToAll, setApplyToAll }) => (
+  <Dialog open={open} maxWidth="md" fullWidth>
+    <DialogTitle>Conflicto de Importación</DialogTitle>
+    <DialogContent>
+      <Typography variant="subtitle1" sx={{ mb: 1 }}>
+        Ya existe una nota con el mismo título: <b>{importedNote.title}</b>
+      </Typography>
+      <Typography variant="body2" sx={{ mb: 2 }}>
+        ¿Qué deseas hacer?
+      </Typography>
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="subtitle2">Comparación de contenido:</Typography>
+        {showDiff ? (
+          <ReactDiffViewer
+            oldValue={existingNote.content || ''}
+            newValue={importedNote.content || ''}
+            splitView={true}
+            leftTitle="Existente"
+            rightTitle="A importar"
+            showDiffOnly={false}
+            styles={{ variables: { light: { diffViewerBackground: '#f8f8f8' } } }}
+          />
+        ) : (
+          <Box>
+            <Typography variant="caption">No hay diferencias de contenido.</Typography>
+          </Box>
+        )}
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+        <Button variant="contained" color="primary" onClick={() => onAction('replace')}>Reemplazar</Button>
+        <Button variant="contained" color="warning" onClick={() => onAction('duplicate')}>Duplicar ("copia")</Button>
+        <Button variant="contained" color="inherit" onClick={() => onAction('skip')}>Omitir</Button>
+        <Box sx={{ ml: 2 }}>
+          <Checkbox checked={applyToAll} onChange={e => setApplyToAll(e.target.checked)} />
+          <Typography variant="caption">Aplicar a todos los siguientes</Typography>
+        </Box>
+      </Box>
+    </DialogContent>
+  </Dialog>
+);
+
+const getNextDuplicateTitle = async (baseTitle, user) => {
+  const entriesRef = collection(db, 'users', user.uid, 'entries');
+  const q = query(entriesRef, where('title', ">=", baseTitle), where('title', "<=", baseTitle + '\uf8ff'));
+  const querySnapshot = await getDocs(q);
+  let max = 0;
+  querySnapshot.forEach(docSnap => {
+    const t = docSnap.data().title;
+    const match = t.match(new RegExp(`^${baseTitle} \\((\\d+)\\)$`));
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > max) max = num;
+    } else if (t === baseTitle) {
+      if (max === 0) max = 1;
+    }
+  });
+  return max === 0 ? `${baseTitle} (1)` : `${baseTitle} (${max + 1})`;
 };
 
 export default ImportDialog; 
