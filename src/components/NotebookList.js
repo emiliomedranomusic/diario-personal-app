@@ -37,7 +37,6 @@ export default function NotebookList({ notebooks, selectedNotebookId, onSelect, 
           {notebooks.map(nb => (
             <ListItem
               key={nb.id}
-              button
               selected={nb.id === selectedNotebookId}
               onClick={() => handleSelect(nb.id)}
               sx={{ borderRadius: 1, mb: 0.5 }}

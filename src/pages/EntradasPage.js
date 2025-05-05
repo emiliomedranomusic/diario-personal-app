@@ -19,6 +19,8 @@ import { getUserNotebooks, createNotebook, deleteNotebook, moveEntriesToGeneral,
 import { collection, query, orderBy, limit, onSnapshot, getCountFromServer, where } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { getMoreEntries, deleteEntryById, PAGE_SIZE } from '../services/entryService';
+import ExportDialog from '../components/ExportDialog';
+import ImportDialog from '../components/ImportDialog';
 
 const EntradasPage = ({ availableTags, setAvailableTags }) => {
     const [entries, setEntries] = useState([]);
@@ -40,6 +42,8 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isEditNotebookDialogOpen, setIsEditNotebookDialogOpen] = useState(false);
     const [notebookToEdit, setNotebookToEdit] = useState(null);
+    const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+    const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
     useEffect(() => {
         setLoadingInitial(true);
@@ -409,6 +413,24 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
                         onDelete={notebook => setNotebookToDelete(notebook)}
                         onEdit={handleOpenEditNotebookDialog}
                     />
+                    <Paper sx={{ p: 1, mb: 1 }}>
+                        <Button
+                            variant="contained"
+                            fullWidth
+                            onClick={() => setIsExportDialogOpen(true)}
+                            sx={{ backgroundColor: '#1976d2', color: '#fff', '&:hover': { backgroundColor: '#1565c0' } }}
+                        >
+                            Exportar Todo
+                        </Button>
+                        <Button
+                            variant="contained"
+                            fullWidth
+                            onClick={() => setIsImportDialogOpen(true)}
+                            sx={{ mt: 1, backgroundColor: '#43a047', color: '#fff', '&:hover': { backgroundColor: '#388e3c' } }}
+                        >
+                            Importar
+                        </Button>
+                    </Paper>
                     <Button variant="contained" fullWidth sx={{ mb: 2, backgroundColor: '#1976d2', color: '#fff', '&:hover': { backgroundColor: '#1565c0' } }} onClick={handleNew} disabled={mode !== 'list'} > NUEVA ENTRADA </Button>
                     <Paper sx={{ p: 1, mb: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} onClick={() => setFiltersOpen(o => !o)}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -517,6 +539,12 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
                 </Dialog>
             )}
             <SnackbarAlert open={snackbar.open} onClose={() => setSnackbar(s => ({ ...s, open: false }))} severity={snackbar.severity} message={snackbar.message} />
+            <ExportDialog
+                open={isExportDialogOpen}
+                onClose={() => setIsExportDialogOpen(false)}
+                entries={entries}
+            />
+            <ImportDialog open={isImportDialogOpen} onClose={() => setIsImportDialogOpen(false)} />
         </React.Fragment>
     );
 };

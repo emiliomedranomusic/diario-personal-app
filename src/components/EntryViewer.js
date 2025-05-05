@@ -2,8 +2,18 @@
 import React from 'react';
 import { Paper, Typography, Box, Button, Divider } from '@mui/material';
 import { format } from 'date-fns'; // Opcional: para formatear fechas si son Timestamps
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
+import { getStorage, ref as storageRef, getBlob, deleteObject, getBytes } from 'firebase/storage';
+import { uploadImageToStorage } from '../utils/uploadImageToStorage';
+import { db } from '../firebase';
+import { doc, updateDoc } from 'firebase/firestore';
+import Snackbar from '@mui/material/Snackbar';
+import { auth } from '../firebase';
 
 const EntryViewer = ({ entry, onEdit, onDelete, onClose }) => {
+  const [snackbar, setSnackbar] = React.useState({ open: false, message: '', severity: 'info' });
+  const [isResubmitting, setIsResubmitting] = React.useState(false);
 
   if (!entry) {
     return (
@@ -39,6 +49,151 @@ const EntryViewer = ({ entry, onEdit, onDelete, onClose }) => {
       }
   };
 
+  // Exportar como TXT
+  const handleExportTxt = () => {
+    let txt = `Título: ${entry.title || 'Sin título'}\n`;
+    txt += `Fecha: ${formatDate(entry.createdAt)}\n`;
+    if (entry.tags && entry.tags.length > 0) txt += `Etiquetas: ${entry.tags.join(', ')}\n`;
+    txt += `\n${entry.content ? entry.content.replace(/<[^>]+>/g, '') : ''}\n`;
+    if (entry.attachments && entry.attachments.length > 0) {
+      txt += '\nAdjuntos:\n';
+      entry.attachments.forEach(att => {
+        txt += `- ${att.name}: ${att.url}\n`;
+      });
+    }
+    const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+    saveAs(blob, `${entry.title || 'nota'}.txt`);
+  };
+
+  // Exportar como JSON
+  const handleExportJson = () => {
+    const blob = new Blob([JSON.stringify(entry, null, 2)], { type: 'application/json' });
+    saveAs(blob, `${entry.title || 'nota'}.json`);
+  };
+
+  // Detectar adjuntos antiguos
+  const oldAttachments = entry.attachments?.filter(att => !att.fullPath) || [];
+  const hasOldAttachments = oldAttachments.length > 0;
+
+  // Re-subir adjuntos antiguos y eliminar los viejos
+  const handleResubmitOldAttachments = async () => {
+    setIsResubmitting(true);
+    let updatedAttachments = [...(entry.attachments || [])];
+    let successCount = 0;
+    let deletedCount = 0;
+    for (const att of oldAttachments) {
+      try {
+        // Descargar el archivo antiguo
+        const response = await fetch(att.url);
+        const blob = await response.blob();
+        // Crear un File para uploadImageToStorage
+        const file = new File([blob], att.name, { type: att.type || blob.type });
+        // Subir de nuevo
+        const result = await uploadImageToStorage(file, 'attachments');
+        // Reemplazar en la lista de adjuntos
+        updatedAttachments = updatedAttachments.map(a =>
+          a === att ? { ...result } : a
+        );
+        successCount++;
+        // Intentar eliminar el archivo antiguo de Storage
+        try {
+          // Extraer el path de la URL
+          const url = new URL(att.url);
+          const path = decodeURIComponent(url.pathname.split('/o/')[1].split('?')[0]);
+          const storage = getStorage();
+          const oldRef = storageRef(storage, path);
+          await deleteObject(oldRef);
+          deletedCount++;
+        } catch (delErr) {
+          // Si falla, solo ignorar
+        }
+      } catch (e) {
+        // Si falla, dejar el adjunto como estaba
+      }
+    }
+    // Actualizar la nota en Firestore
+    try {
+      const entryRef = doc(db, 'users', entry.userId || entry.uid, 'entries', entry.id);
+      await updateDoc(entryRef, { attachments: updatedAttachments });
+      setSnackbar({ open: true, message: `Re-subidos ${successCount} adjuntos antiguos. Eliminados ${deletedCount} archivos antiguos.`, severity: 'success' });
+      window.location.reload(); // Refrescar para ver los cambios
+    } catch (e) {
+      setSnackbar({ open: true, message: 'Error actualizando la nota tras re-subir adjuntos.', severity: 'error' });
+    } finally {
+      setIsResubmitting(false);
+    }
+  };
+
+  // Helper para timeout de promesas
+  function promiseTimeout(promise, ms, errorMsg) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(errorMsg)), ms);
+      promise
+        .then((value) => {
+          clearTimeout(timer);
+          resolve(value);
+        })
+        .catch((err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
+    });
+  }
+
+  // Exportar como ZIP (TXT + adjuntos)
+  const handleExportZip = async () => {
+    try {
+      const zip = new JSZip();
+      let txt = `Título: ${entry.title || 'Sin título'}\n`;
+      txt += `Fecha: ${formatDate(entry.createdAt)}\n`;
+      if (entry.tags && entry.tags.length > 0) txt += `Etiquetas: ${entry.tags.join(', ')}\n`;
+      txt += `\n${entry.content ? entry.content.replace(/<[^>]+>/g, '') : ''}\n`;
+      if (entry.attachments && entry.attachments.length > 0) {
+        txt += '\nAdjuntos:\n';
+        entry.attachments.forEach(att => {
+          txt += `- ${att.name}: ${att.url}\n`;
+        });
+      }
+      zip.file(`${entry.title || 'nota'}.txt`, txt);
+      
+      // Adjuntos
+      let skipped = [];
+      let exported = [];
+      if (entry.attachments && entry.attachments.length > 0) {
+        const storage = getStorage();
+        for (const att of entry.attachments) {
+          try {
+            if (att.fullPath) {
+              console.log(`[ZIP] Intentando exportar adjunto: ${att.name} con fullPath: ${att.fullPath}`);
+              // Por ahora solo añadimos el nombre del archivo al ZIP
+              zip.file(att.name, `[Archivo adjunto: ${att.name}]\nURL: ${att.url}`);
+              exported.push(att.name);
+            } else {
+              console.warn(`[ZIP] Adjunto sin fullPath: ${att.name}`);
+              skipped.push(att.name);
+            }
+          } catch (e) {
+            console.error(`[ZIP] Error exportando adjunto: ${att.name}`, e);
+            skipped.push(att.name);
+          }
+        }
+      }
+      
+      if (exported.length > 0) {
+        setSnackbar({ open: true, message: `Adjuntos incluidos: ${exported.join(', ')}`, severity: 'success' });
+      }
+      if (skipped.length > 0) {
+        setSnackbar({ open: true, message: `No se pudieron incluir: ${skipped.join(', ')}`, severity: 'warning' });
+      }
+      
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, `${entry.title || 'nota'}.zip`);
+    } catch (err) {
+      console.error('[ZIP] Error crítico en la exportación:', err);
+      setSnackbar({ open: true, message: `Error crítico exportando ZIP: ${err.message || err}`, severity: 'error' });
+    }
+  };
+
   return (
     <Paper sx={{ p: 3, display: 'flex', flexDirection: 'column', height: 'calc(100vh - 100px)', minHeight: 500, boxShadow: 3, borderRadius: 2 }}>
       {/* Encabezado con Título y Fecha */}
@@ -55,6 +210,51 @@ const EntryViewer = ({ entry, onEdit, onDelete, onClose }) => {
                  Etiquetas: {entry.tags.join(', ')}
             </Typography>
          )}
+        {/* Botones de exportación */}
+        <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+          <Button 
+            variant="contained" 
+            size="small" 
+            onClick={handleExportTxt}
+            sx={{ backgroundColor: '#1976d2', color: '#fff', '&:hover': { backgroundColor: '#1565c0' } }}
+          >
+            Exportar TXT
+          </Button>
+          <Button 
+            variant="contained" 
+            size="small" 
+            onClick={handleExportJson}
+            sx={{ backgroundColor: '#43a047', color: '#fff', '&:hover': { backgroundColor: '#388e3c' } }}
+          >
+            Exportar JSON
+          </Button>
+          <Button 
+            variant="contained" 
+            size="small" 
+            onClick={handleExportZip}
+            sx={{ backgroundColor: '#fb8c00', color: '#fff', '&:hover': { backgroundColor: '#ef6c00' } }}
+          >
+            Exportar ZIP (con adjuntos)
+          </Button>
+        </Box>
+        {hasOldAttachments && (
+          <Box sx={{ mt: 2, mb: 1 }}>
+            <Typography color="warning.main" variant="body2">
+              Algunos adjuntos fueron subidos antes de la actualización y no pueden exportarse como archivos reales.<br />
+              <b>Re-súbelos</b> para poder exportarlos correctamente.
+            </Typography>
+            <Button 
+              variant="contained" 
+              size="small" 
+              color="warning"
+              onClick={handleResubmitOldAttachments}
+              disabled={isResubmitting}
+              sx={{ mt: 1 }}
+            >
+              {isResubmitting ? 'Re-subiendo...' : 'Re-subir adjuntos antiguos'}
+            </Button>
+          </Box>
+        )}
       </Box>
       <Divider sx={{ mb: 2, flexShrink: 0 }} />
 
@@ -112,6 +312,13 @@ const EntryViewer = ({ entry, onEdit, onDelete, onClose }) => {
           Editar
         </Button>
       </Box>
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar(s => ({ ...s, open: false }))}
+        message={snackbar.message}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </Paper>
   );
 };

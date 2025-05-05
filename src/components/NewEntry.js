@@ -367,7 +367,12 @@ const NewEntry = ({
             </Box>
             {/* --- Adjuntos tipo Gmail --- */}
             <Box sx={{ mt: 2, mb: 2 }}>
-                <Button variant="outlined" component="label" size="small" sx={{ mb: 1 }}>
+                <Button 
+                  variant="contained" 
+                  component="label" 
+                  size="small" 
+                  sx={{ mb: 1, backgroundColor: '#1976d2', color: '#fff', '&:hover': { backgroundColor: '#1565c0' } }}
+                >
                     Adjuntar archivo
                     <input hidden multiple type="file" onChange={handleAttachFiles} />
                 </Button>
