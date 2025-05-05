@@ -194,6 +194,16 @@ const EntryViewer = ({ entry, onEdit, onDelete, onClose }) => {
     }
   };
 
+  if (entry && entry.attachments && entry.attachments.length > 0) {
+    console.log('UID actual:', auth.currentUser?.uid);
+    entry.attachments.forEach(att => {
+      // Extraer el UID de la ruta fullPath
+      const match = att.fullPath ? att.fullPath.match(/^attachments\/(.*?)\//) : null;
+      const uidInPath = match ? match[1] : 'NO_UID';
+      console.log('Adjunto:', att.name, 'fullPath:', att.fullPath, 'UID en path:', uidInPath);
+    });
+  }
+
   return (
     <Paper sx={{ p: 3, display: 'flex', flexDirection: 'column', height: 'calc(100vh - 100px)', minHeight: 500, boxShadow: 3, borderRadius: 2 }}>
       {/* Encabezado con Título y Fecha */}

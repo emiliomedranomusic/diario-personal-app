@@ -21,6 +21,7 @@ import { db, auth } from '../firebase';
 import { getMoreEntries, deleteEntryById, PAGE_SIZE } from '../services/entryService';
 import ExportDialog from '../components/ExportDialog';
 import ImportDialog from '../components/ImportDialog';
+import { onAuthStateChanged } from 'firebase/auth';
 
 const EntradasPage = ({ availableTags, setAvailableTags }) => {
     const [entries, setEntries] = useState([]);
@@ -47,34 +48,39 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
 
     useEffect(() => {
         setLoadingInitial(true);
-        const userId = auth.currentUser ? auth.currentUser.uid : null;
-        if (!userId) {
-            setLoadingInitial(false);
-            setEntries([]);
-            setHasMore(false);
-            return;
-        }
-        const entriesRef = collection(db, 'users', userId, 'entries');
-        const q = query(entriesRef, orderBy('updatedAt', 'desc'), limit(PAGE_SIZE));
-        const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const firstBatchEntries = [];
-            querySnapshot.forEach((doc) => {
-                firstBatchEntries.push({ id: doc.id, ...doc.data() });
+        let unsubscribeEntries = null;
+        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                setLoadingInitial(false);
+                setEntries([]);
+                setHasMore(false);
+                if (unsubscribeEntries) unsubscribeEntries();
+                return;
+            }
+            const entriesRef = collection(db, 'users', user.uid, 'entries');
+            const q = query(entriesRef, orderBy('updatedAt', 'desc'), limit(PAGE_SIZE));
+            if (unsubscribeEntries) unsubscribeEntries();
+            unsubscribeEntries = onSnapshot(q, (querySnapshot) => {
+                const firstBatchEntries = [];
+                querySnapshot.forEach((doc) => {
+                    firstBatchEntries.push({ id: doc.id, ...doc.data() });
+                });
+                setEntries(firstBatchEntries);
+                const currentLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1];
+                setLastVisible(currentLastVisible);
+                setHasMore(firstBatchEntries.length === PAGE_SIZE);
+                setLoadingInitial(false);
+                console.log(`Firestore listener updated: Received ${firstBatchEntries.length} entries for the first batch.`);
+            }, (error) => {
+                setSnackbar({ open: true, message: 'Error al cargar entradas.', severity: 'error' });
+                setLoadingInitial(false);
+                setEntries([]);
+                setHasMore(false);
             });
-            setEntries(firstBatchEntries);
-            const currentLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1];
-            setLastVisible(currentLastVisible);
-            setHasMore(firstBatchEntries.length === PAGE_SIZE);
-            setLoadingInitial(false);
-            console.log(`Firestore listener updated: Received ${firstBatchEntries.length} entries for the first batch.`);
-        }, (error) => {
-            setSnackbar({ open: true, message: 'Error al cargar entradas.', severity: 'error' });
-            setLoadingInitial(false);
-            setEntries([]);
-            setHasMore(false);
         });
         return () => {
-            unsubscribe();
+            if (unsubscribeEntries) unsubscribeEntries();
+            unsubscribeAuth();
         };
     }, []);
 
