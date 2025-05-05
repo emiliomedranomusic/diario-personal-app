@@ -4,7 +4,7 @@ import { Paper, Typography, Box, Button, Divider } from '@mui/material';
 import { format } from 'date-fns'; // Opcional: para formatear fechas si son Timestamps
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import { getStorage, ref as storageRef, getBlob, deleteObject, getBytes } from 'firebase/storage';
+import { getStorage, ref as storageRef, getBlob, deleteObject, getBytes, getDownloadURL } from 'firebase/storage';
 import { uploadImageToStorage } from '../utils/uploadImageToStorage';
 import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -14,6 +14,68 @@ import { auth } from '../firebase';
 const EntryViewer = ({ entry, onEdit, onDelete, onClose }) => {
   const [snackbar, setSnackbar] = React.useState({ open: false, message: '', severity: 'info' });
   const [isResubmitting, setIsResubmitting] = React.useState(false);
+  const [attachmentUrls, setAttachmentUrls] = React.useState([]);
+  const [attachmentLoading, setAttachmentLoading] = React.useState([]);
+  const [attachmentErrors, setAttachmentErrors] = React.useState([]);
+
+  React.useEffect(() => {
+    if (!entry || !entry.attachments) return;
+    let isMounted = true;
+    setAttachmentUrls(Array(entry.attachments.length).fill(null));
+    setAttachmentLoading(Array(entry.attachments.length).fill(true));
+    setAttachmentErrors(Array(entry.attachments.length).fill(null));
+    entry.attachments.forEach((att, idx) => {
+      if (att.fullPath) {
+        getDownloadURL(storageRef(getStorage(), att.fullPath))
+          .then(url => {
+            if (isMounted) {
+              setAttachmentUrls(prev => {
+                const arr = [...prev];
+                arr[idx] = url;
+                return arr;
+              });
+              setAttachmentLoading(prev => {
+                const arr = [...prev];
+                arr[idx] = false;
+                return arr;
+              });
+            }
+          })
+          .catch(err => {
+            if (isMounted) {
+              setAttachmentErrors(prev => {
+                const arr = [...prev];
+                arr[idx] = err.message || 'Error al obtener URL';
+                return arr;
+              });
+              setAttachmentLoading(prev => {
+                const arr = [...prev];
+                arr[idx] = false;
+                return arr;
+              });
+            }
+          });
+      } else {
+        // Fallback: use att.url if no fullPath (legacy attachments)
+        setAttachmentUrls(prev => {
+          const arr = [...prev];
+          arr[idx] = att.url || null;
+          return arr;
+        });
+        setAttachmentLoading(prev => {
+          const arr = [...prev];
+          arr[idx] = false;
+          return arr;
+        });
+        setAttachmentErrors(prev => {
+          const arr = [...prev];
+          arr[idx] = att.url ? null : 'Sin URL';
+          return arr;
+        });
+      }
+    });
+    return () => { isMounted = false; };
+  }, [entry]);
 
   if (!entry) {
     return (
@@ -282,14 +344,28 @@ const EntryViewer = ({ entry, onEdit, onDelete, onClose }) => {
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
             {entry.attachments.map((att, idx) => (
               <Box key={idx} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 120 }}>
-                {att.type && att.type.startsWith('image/') ? (
-                  <img src={att.url} alt={att.name} style={{ width: 100, height: 70, objectFit: 'cover', borderRadius: 4, marginBottom: 4, border: '1px solid #ccc' }} />
+                {attachmentLoading[idx] ? (
+                  <Box sx={{ width: 100, height: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f5', borderRadius: 4, border: '1px solid #ccc', mb: 0.5 }}>
+                    <Typography variant="caption">Cargando...</Typography>
+                  </Box>
+                ) : attachmentErrors[idx] ? (
+                  <Box sx={{ width: 100, height: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#ffeaea', borderRadius: 4, border: '1px solid #e57373', mb: 0.5 }}>
+                    <Typography variant="caption" color="error">No disponible</Typography>
+                  </Box>
+                ) : att.type && att.type.startsWith('image/') ? (
+                  <img src={attachmentUrls[idx]} alt={att.name} style={{ width: 100, height: 70, objectFit: 'cover', borderRadius: 4, marginBottom: 4, border: '1px solid #ccc' }} />
                 ) : (
                   <Box sx={{ width: 100, height: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f5', borderRadius: 4, border: '1px solid #ccc', mb: 0.5 }}>
                     <Typography variant="caption" sx={{ textAlign: 'center' }}>{att.name ? att.name.split('.').pop().toUpperCase() : 'ARCHIVO'}</Typography>
                   </Box>
                 )}
-                <a href={att.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, textDecoration: 'underline', wordBreak: 'break-all' }}>{att.name && att.name.length > 16 ? att.name.slice(0, 13) + '...' : att.name}</a>
+                {attachmentLoading[idx] ? (
+                  <Typography variant="caption" sx={{ fontSize: 12 }}>Cargando enlace...</Typography>
+                ) : attachmentErrors[idx] ? (
+                  <Typography variant="caption" color="error" sx={{ fontSize: 12 }}>{attachmentErrors[idx]}</Typography>
+                ) : (
+                  <a href={attachmentUrls[idx]} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, textDecoration: 'underline', wordBreak: 'break-all' }}>{att.name && att.name.length > 16 ? att.name.slice(0, 13) + '...' : att.name}</a>
+                )}
               </Box>
             ))}
           </Box>
