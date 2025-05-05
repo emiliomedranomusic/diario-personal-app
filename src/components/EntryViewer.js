@@ -65,6 +65,26 @@ const EntryViewer = ({ entry, onEdit, onDelete, onClose }) => {
            <span dangerouslySetInnerHTML={{ __html: entry.content || '' }} />
         </Typography>
       </Box>
+      {/* --- Adjuntos tipo Gmail --- */}
+      {entry.attachments && entry.attachments.length > 0 && (
+        <Box sx={{ mt: 2, mb: 2 }}>
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>Adjuntos:</Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+            {entry.attachments.map((att, idx) => (
+              <Box key={idx} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 120 }}>
+                {att.type && att.type.startsWith('image/') ? (
+                  <img src={att.url} alt={att.name} style={{ width: 100, height: 70, objectFit: 'cover', borderRadius: 4, marginBottom: 4, border: '1px solid #ccc' }} />
+                ) : (
+                  <Box sx={{ width: 100, height: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f5', borderRadius: 4, border: '1px solid #ccc', mb: 0.5 }}>
+                    <Typography variant="caption" sx={{ textAlign: 'center' }}>{att.name ? att.name.split('.').pop().toUpperCase() : 'ARCHIVO'}</Typography>
+                  </Box>
+                )}
+                <a href={att.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, textDecoration: 'underline', wordBreak: 'break-all' }}>{att.name && att.name.length > 16 ? att.name.slice(0, 13) + '...' : att.name}</a>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
 
       {/* Acciones al Final */}
       <Box sx={{ mt: 'auto', pt: 2, borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: 1, flexShrink: 0 }}>
