@@ -323,6 +323,7 @@ const NewEntry = ({
             // 5. GUARDAR 'finalProfileRefs' (El array combinado o nuevo)
             const entryData = {
                 title: titleToSave,
+                titleLower: titleToSave.toLowerCase(),
                 content,
                 tags: selectedTags,
                 createdAt: dateToSave,

@@ -16,12 +16,12 @@ import NotebookList from '../components/NotebookList';
 import NotebookDialog from '../components/NotebookDialog';
 import SnackbarAlert from '../components/SnackbarAlert';
 import { getUserNotebooks, createNotebook, deleteNotebook, moveEntriesToGeneral, updateNotebookName } from '../data/notebooks';
-import { collection, query, orderBy, limit, onSnapshot, getCountFromServer, where } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, getCountFromServer, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { getMoreEntries, deleteEntryById, PAGE_SIZE } from '../services/entryService';
+import { getMoreEntries, deleteEntryById, PAGE_SIZE, searchEntries, updateAllEntriesWithTitleLower } from '../services/entryService';
 import ExportDialog from '../components/ExportDialog';
 import ImportDialog from '../components/ImportDialog';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 const EntradasPage = ({ availableTags, setAvailableTags }) => {
     const [entries, setEntries] = useState([]);
@@ -45,6 +45,22 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
     const [notebookToEdit, setNotebookToEdit] = useState(null);
     const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
     const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+
+    // --- Botón temporal para actualizar titleLower en todas las notas ---
+    const [updating, setUpdating] = useState(false);
+    const [updatedCount, setUpdatedCount] = useState(null);
+    const handleUpdateAllTitleLower = async () => {
+        setUpdating(true);
+        try {
+            const n = await updateAllEntriesWithTitleLower();
+            setUpdatedCount(n);
+            setSnackbar({ open: true, message: `Notas actualizadas: ${n}`, severity: 'success' });
+        } catch (e) {
+            setSnackbar({ open: true, message: 'Error actualizando notas: ' + e.message, severity: 'error' });
+        } finally {
+            setUpdating(false);
+        }
+    };
 
     useEffect(() => {
         setLoadingInitial(true);
@@ -83,6 +99,42 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
             unsubscribeAuth();
         };
     }, []);
+
+    // --- NUEVO: Búsqueda global en Firestore ---
+    useEffect(() => {
+        let active = true;
+        const doSearch = async () => {
+            if (searchTerm && searchTerm.trim() !== '') {
+                setLoadingInitial(true);
+                const results = await searchEntries(searchTerm);
+                if (active) {
+                    setEntries(results);
+                    setHasMore(false);
+                    setLoadingInitial(false);
+                }
+            } else {
+                // Si el cuadro de búsqueda está vacío, recargar todas las entradas normales
+                setLoadingInitial(true);
+                const user = auth.currentUser;
+                if (!user) {
+                    setEntries([]);
+                    setHasMore(false);
+                    setLoadingInitial(false);
+                    return;
+                }
+                const entriesRef = collection(db, 'users', user.uid, 'entries');
+                const q = query(entriesRef, orderBy('updatedAt', 'desc'), limit(PAGE_SIZE));
+                const snapshot = await getDocs(q);
+                const allEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setEntries(allEntries);
+                setLastVisible(snapshot.docs[snapshot.docs.length - 1] || null);
+                setHasMore(allEntries.length === PAGE_SIZE);
+                setLoadingInitial(false);
+            }
+        };
+        doSearch();
+        return () => { active = false; };
+    }, [searchTerm]);
 
     const loadMoreEntries = useCallback(async () => {
         if (loadingMore || !hasMore || !lastVisible) return;
@@ -420,6 +472,9 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
                         onEdit={handleOpenEditNotebookDialog}
                     />
                     <Paper sx={{ p: 1, mb: 1 }}>
+                        {/* --- Botón temporal para actualizar titleLower --- */}
+                        {/* Botón eliminado */}
+                        {/* Fin botón temporal */}
                         <Button
                             variant="contained"
                             fullWidth

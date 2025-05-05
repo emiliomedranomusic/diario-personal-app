@@ -1,7 +1,7 @@
 import { db, auth, storage } from '../firebase';
 import {
     collection, query, orderBy, limit, getDocs,
-    startAfter, doc, deleteDoc, getDoc
+    startAfter, doc, deleteDoc, getDoc, where, updateDoc
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 
@@ -90,4 +90,53 @@ export const getEntryById = async (entryId) => {
         console.error("Error fetching entry by ID:", error);
         return null;
     }
+};
+
+// Búsqueda global por titleLower (no sensible a mayúsculas) y tags
+export const searchEntries = async (searchTerm) => {
+    const userId = auth.currentUser ? auth.currentUser.uid : null;
+    if (!userId || !searchTerm || !searchTerm.trim()) return [];
+    const entriesRef = collection(db, 'users', userId, 'entries');
+    const term = searchTerm.trim().toLowerCase();
+    // Query por titleLower (prefijo)
+    const qTitle = query(
+        entriesRef,
+        where('titleLower', '>=', term),
+        where('titleLower', '<=', term + '\uf8ff'),
+        orderBy('titleLower'),
+        limit(20)
+    );
+    // Query por tags (array-contains)
+    const qTags = query(
+        entriesRef,
+        where('tags', 'array-contains', term),
+        limit(20)
+    );
+    // Ejecutar ambas queries
+    const [titleSnap, tagsSnap] = await Promise.all([
+        getDocs(qTitle),
+        getDocs(qTags)
+    ]);
+    // Combinar resultados y eliminar duplicados
+    const map = new Map();
+    titleSnap.forEach(doc => map.set(doc.id, { id: doc.id, ...doc.data() }));
+    tagsSnap.forEach(doc => map.set(doc.id, { id: doc.id, ...doc.data() }));
+    return Array.from(map.values());
+};
+
+// Script para actualizar notas antiguas y agregar titleLower si falta
+export const updateAllEntriesWithTitleLower = async () => {
+    const userId = auth.currentUser ? auth.currentUser.uid : null;
+    if (!userId) throw new Error('No autenticado');
+    const entriesRef = collection(db, 'users', userId, 'entries');
+    const snapshot = await getDocs(entriesRef);
+    let updated = 0;
+    for (const docSnap of snapshot.docs) {
+        const data = docSnap.data();
+        if (!data.titleLower && data.title) {
+            await updateDoc(docSnap.ref, { titleLower: data.title.toLowerCase() });
+            updated++;
+        }
+    }
+    return updated;
 };
