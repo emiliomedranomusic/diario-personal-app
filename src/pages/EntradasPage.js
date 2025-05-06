@@ -34,6 +34,8 @@ import GroupIcon from '@mui/icons-material/Group';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import FlightIcon from '@mui/icons-material/Flight';
+import { exportUserBackup } from "../utils/exportBackup";
+import { saveAs } from "file-saver"; // Importa file-saver
 
 const ICONS = {
   WorkOutline: <WorkOutlineIcon />,
@@ -397,6 +399,23 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
         }
     };
 
+    const [isExporting, setIsExporting] = useState(false); // Añade este estado arriba, junto a otros useState
+
+    const handleExportBackup = async () => {
+        setIsExporting(true);
+        setSnackbar({ open: true, message: 'Preparando exportación...', severity: 'info' });
+        try {
+            const data = await exportUserBackup();
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+            const dateStamp = new Date().toISOString().split('T')[0];
+            saveAs(blob, `diario_backup_${dateStamp}.json`);
+            setSnackbar({ open: true, message: 'Exportación completada.', severity: 'success' });
+        } catch (e) {
+            setSnackbar({ open: true, message: `Error al exportar: ${e.message}`, severity: 'error' });
+        } finally {
+            setIsExporting(false);
+        }
+    };
     const requestOpenNotebookDialog = (callback = null) => { 
         console.log("Request to open notebook dialog received. Callback:", callback);
         setOpenNotebookDialogRequest({ callback }); 
@@ -518,7 +537,7 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
                             variant="contained"
                             fullWidth
                             onClick={() => setIsExportDialogOpen(true)}
-                            sx={{ backgroundColor: '#fb8c00', color: '#fff', '&:hover': { backgroundColor: '#ef6c00' } }}
+                            sx={{ mb:1, backgroundColor: '#fb8c00', color: '#fff', '&:hover': { backgroundColor: '#ef6c00' } }}
                         >
                             Exportar Todo
                         </Button>
@@ -526,10 +545,20 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
                             variant="contained"
                             fullWidth
                             onClick={() => setIsImportDialogOpen(true)}
-                            sx={{ mt: 1, backgroundColor: '#43a047', color: '#fff', '&:hover': { backgroundColor: '#388e3c' } }}
+                            sx={{ mb: 1, backgroundColor: '#43a047', color: '#fff', '&:hover': { backgroundColor: '#388e3c' } }}
                         >
                             Importar
                         </Button>
+                        <Button
+  variant="contained"
+  fullWidth
+  onClick={handleExportBackup}
+  disabled={isExporting}
+  sx={{ mb: 1, backgroundColor: '#8e24aa', color: '#fff', '&:hover': { backgroundColor: '#1565c0' } }}
+>
+  {isExporting ? <CircularProgress size={24} color="inherit" /> : 'Exportar Backup'}
+</Button>
+
                     </Paper>
                     <Paper sx={{ p: 1, mb: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} onClick={() => setFiltersOpen(o => !o)}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
