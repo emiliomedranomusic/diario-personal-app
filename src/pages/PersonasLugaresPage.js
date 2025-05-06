@@ -5,6 +5,7 @@ import ProfileList from '../components/ProfileList';
 import ProfileDialog from '../components/ProfileDialog';
 import { subscribeToUserProfiles, addProfile, updateProfile, deleteProfile } from '../services/profileService';
 import SnackbarAlert from '../components/SnackbarAlert';
+import PeopleIcon from '@mui/icons-material/People';
 
 const PersonasLugaresPage = ({ entries = [] }) => {
   const [profiles, setProfiles] = useState([]);
@@ -84,8 +85,11 @@ const PersonasLugaresPage = ({ entries = [] }) => {
 
   return (
     <Paper sx={{ p: 3, maxWidth: 900, margin: '32px auto' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h5" gutterBottom>Personas y Lugares</Typography>
+        <Box>
+        <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+  <PeopleIcon sx={{ fontSize: 32, color: 'primary.main' }} />
+  Personas y Lugares
+</Typography>
         <Button variant="contained" onClick={handleCreate} sx={{ backgroundColor: '#1976d2', color: '#fff', '&:hover': { backgroundColor: '#1565c0' } }} > Crear Nuevo Perfil </Button>
       </Box>
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>

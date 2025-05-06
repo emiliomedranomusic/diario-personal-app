@@ -600,7 +600,22 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
                     {/* --- Renderizado Condicional por Modo --- */}
                     {mode === 'list' && (
                         <Paper sx={{ p: 2, minHeight: 'calc(100vh - 120px)', maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', bgcolor: '#f8fafc', boxShadow: 1, borderRadius: 2 }}>
-                            {loadingInitial ? (
+                              <Typography
+  variant="h5"
+  align="left"
+  sx={{
+    display: 'flex',
+    alignItems: 'center',
+    gap: 1,
+    mb: 2,
+    ml: 1 // Opcional: margen izquierdo
+  }}
+>
+  <BookOutlinedIcon sx={{ fontSize: 32, color: 'primary.main' }} />
+  {selectedNotebookId === 'all'
+    ? 'Mis notas'
+    : notebooks.find(nb => nb.id === selectedNotebookId)?.nombre || 'Notas'}
+</Typography>{loadingInitial ? (
                                 <Box sx={{ display: 'flex', justifyContent: 'center', mt: 5 }}><CircularProgress /></Box>
                             ) : filteredEntries.length > 0 ? (
                                 <>

@@ -135,8 +135,11 @@ const EtiquetasPage = ({ availableTags = [], setAvailableTags }) => {
     <Paper sx={{ p: 3, maxWidth: 700, margin: '32px auto' }}>
       {/* Título */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-        <LocalOfferOutlinedIcon color="primary"/>
-        <Typography variant="h5" component="h1">Gestión de Etiquetas</Typography>
+     
+        <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+  <LocalOfferOutlinedIcon  sx={{ fontSize: 32, color: 'primary.main' }} />
+  Gestión de Etiquetas
+</Typography>
       </Box>
 
       {/* Formulario Añadir */}
@@ -164,7 +167,38 @@ const EtiquetasPage = ({ availableTags = [], setAvailableTags }) => {
           const IconComponent = ICONS_MAP[tag.icon] || <LocalOfferOutlinedIcon fontSize="inherit"/>;
 
           return (
-            <ListItem key={tag.name || idx} sx={{ borderBottom: '1px solid #eee', alignItems: 'flex-start', py: 1, minHeight: 60 }} disablePadding secondaryAction={ !isEditing && ( <ListItemSecondaryAction> <Tooltip title="Editar etiqueta"><IconButton edge="end" onClick={() => startEdit(idx)} size="small" disabled={isUpdating}><EditIcon fontSize="inherit"/></IconButton></Tooltip> <Tooltip title="Eliminar etiqueta"><IconButton edge="end" onClick={() => deleteTag(idx)} size="small" disabled={isUpdating}><DeleteIcon fontSize="inherit"/></IconButton></Tooltip> </ListItemSecondaryAction> ) }>
+            <ListItem key={tag.name || idx} sx={{ borderBottom: '1px solid #eee', alignItems: 'flex-start', py: 1, minHeight: 60 }} disablePadding secondaryAction={ !isEditing && ( <ListItemSecondaryAction
+              sx={{
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 1,
+                right: 16 // Ajusta si necesitas más separación del borde
+              }}
+            >
+              <Tooltip title="Editar etiqueta">
+                <IconButton
+                  edge="end"
+                  onClick={() => startEdit(idx)}
+                  size="small"
+                  disabled={isUpdating}
+                  sx={{ color: '#fb8c00' }}
+                >
+                  <EditIcon fontSize="inherit"/>
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Eliminar etiqueta">
+                <IconButton
+                  edge="end"
+                  onClick={() => deleteTag(idx)}
+                  size="small"
+                  disabled={isUpdating}
+                  sx={{ color: '#e53935' }}
+                >
+                  <DeleteIcon fontSize="inherit"/>
+                </IconButton>
+              </Tooltip>
+            </ListItemSecondaryAction> ) }>
               <ListItemIcon sx={{ minWidth: 'auto', mr: 1.5, mt: isEditing ? 2.5 : 1 }}>
                 <Tooltip title={`Icono: ${tag.icon}`}> <Avatar sx={{ bgcolor: tag.color || DEFAULT_COLOR, width: 32, height: 32, color: '#fff' }}>{IconComponent}</Avatar> </Tooltip>
               </ListItemIcon>
