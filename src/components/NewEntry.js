@@ -5,8 +5,8 @@ import { collection, addDoc, doc, updateDoc, query, getCountFromServer } from 'f
 import {
     TextField, Button, Paper, Typography, FormControl, InputLabel, Select, MenuItem,
     OutlinedInput, Chip, Grid, Dialog, DialogTitle, DialogContent,
-    List, ListItem, ListItemButton, ListItemText, IconButton,
-    Box,
+    List, ListItemButton, ListItemText, IconButton,
+    Box, Avatar
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import ReactQuill, { Quill } from 'react-quill';
@@ -20,6 +20,18 @@ import { uploadImageToStorage } from '../utils/uploadImageToStorage';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { ref as storageRef, deleteObject } from 'firebase/storage';
 import { storage } from '../firebase';
+import LocalOfferOutlinedIcon from '@mui/icons-material/LocalOfferOutlined';
+import WorkOutlineIcon from '@mui/icons-material/WorkOutline';
+import SchoolIcon from '@mui/icons-material/School';
+import FamilyRestroomIcon from '@mui/icons-material/FamilyRestroom';
+import StarBorderIcon from '@mui/icons-material/StarBorder';
+import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
+import BookOutlinedIcon from '@mui/icons-material/BookOutlined';
+import ChurchIcon from '@mui/icons-material/Church';
+import GroupIcon from '@mui/icons-material/Group';
+import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import FlightIcon from '@mui/icons-material/Flight';
 
 // --- REGISTRO DEL MÓDULO (después de todos los imports) ---
 Quill.register('modules/imageResize', ImageResize);
@@ -42,6 +54,10 @@ const parseFecha = (entryData) => {
     if (createdAt.toDate) { d = createdAt.toDate(); }
     else { try { d = new Date(createdAt); if (isNaN(d.getTime())) throw new Error("Invalid Date"); } catch (e) { console.warn("Could not parse date:", createdAt, e); return { year: '', month: '', day: '' }; } }
     return { year: String(d.getFullYear()), month: String(d.getMonth() + 1), day: String(d.getDate()) };
+};
+
+const ICONS = {
+    WorkOutline: <WorkOutlineIcon />, School: <SchoolIcon />, FamilyRestroom: <FamilyRestroomIcon />, StarBorder: <StarBorderIcon />, FavoriteBorder: <FavoriteBorderIcon />, BookOutlined: <BookOutlinedIcon />, Church: <ChurchIcon />, Group: <GroupIcon />, LocalHospital: <LocalHospitalIcon />, AttachMoney: <AttachMoneyIcon />, Flight: <FlightIcon />, LocalOfferOutlined: <LocalOfferOutlinedIcon />
 };
 
 const NewEntry = ({
@@ -82,6 +98,9 @@ const NewEntry = ({
 
     const parseFechaStable = useCallback(parseFecha, []);
 
+    // Helper para obtener el objeto de etiqueta por nombre (ahora sí tiene acceso a availableTags)
+    const getTagObj = (name) => availableTags.find(t => t.name === name) || { name };
+
     // --- Effects ---
     useEffect(() => {
         const unsubscribe = subscribeToUserProfiles((fetchedProfiles) => {
@@ -95,7 +114,12 @@ const NewEntry = ({
         isNewEntryMode.current = !entry;
         setTitle(entry?.title || '');
         setContent(entry?.content || '');
-        setSelectedTags(entry?.tags || []);
+        let tags = entry?.tags || [];
+        // Siempre convertir a array de strings (soporte legacy)
+        if (tags.length > 0 && typeof tags[0] === 'object') {
+            tags = tags.map(t => t.name || t);
+        }
+        setSelectedTags(tags);
         setFecha(parseFechaStable(entry));
         const initialNotebookId = entry?.notebookId || 'default';
         setNotebookId(initialNotebookId);
@@ -110,42 +134,6 @@ const NewEntry = ({
 
     // --- Handlers ---
     const handleTagsChange = (event) => { setSelectedTags(typeof event.target.value === 'string' ? event.target.value.split(',') : event.target.value); };
-    const imageHandler = useCallback(() => {
-        const input = document.createElement('input');
-        input.setAttribute('type', 'file');
-        input.setAttribute('accept', 'image/*');
-        input.click();
-        input.onchange = async () => {
-            const file = input.files ? input.files[0] : null;
-            if (!file) return;
-            if (file.size > 5 * 1024 * 1024) {
-                setSnackbar({ open: true, message: 'La imagen debe ser menor a 5MB', severity: 'error' });
-                return;
-            }
-            setIsImageUploading(true);
-            setImageUploadProgress(0);
-            setSnackbar({ open: true, message: 'Subiendo imagen...', severity: 'info' });
-            if (quillRef.current) quillRef.current.getEditor().enable(false);
-            try {
-                const url = await uploadImageToStorage(file, 'uploads', (progress) => setImageUploadProgress(progress));
-                if (quillRef.current) {
-                    const quill = quillRef.current.getEditor();
-                    quill.enable(true);
-                    const range = quill.getSelection(true);
-                    quill.insertEmbed(range.index, 'image', url, 'user');
-                    quill.setSelection(range.index + 1, 0, 'user');
-                    setContent(quill.root.innerHTML);
-                }
-                setSnackbar({ open: true, message: 'Imagen insertada.', severity: 'success' });
-            } catch (error) {
-                setSnackbar({ open: true, message: `Error al subir imagen: ${error.message || 'Error desconocido'}`, severity: 'error' });
-                if (quillRef.current) quillRef.current.getEditor().enable(true);
-            } finally {
-                setIsImageUploading(false);
-                setImageUploadProgress(0);
-            }
-        };
-    }, [setSnackbar]);
 
     const quillModules = useMemo(() => ({
         toolbar: {
@@ -186,12 +174,15 @@ const NewEntry = ({
 
     const handleSelectProfile = useCallback((profile) => { if (quillRef.current && mentionPosition !== null) { const editor = quillRef.current.getEditor(); const profileName = profile.nombre; const replaceLength = mentionQuery.length + 1; const startIndex = mentionPosition; editor.deleteText(startIndex, replaceLength, 'user'); editor.insertText(startIndex, `@${profileName} `, 'user'); const newEditorContent = editor.root.innerHTML; setContent(newEditorContent); editor.setSelection(startIndex + profileName.length + 2, 0, 'user'); } handleCloseMentionModal(); }, [mentionPosition, mentionQuery, handleCloseMentionModal]);
 
+    // Al crear perfil desde mención, solo toma la primera palabra
     const handleCreateProfileFromMention = useCallback((nombre) => {
         if (!nombre || !nombre.trim()) {
             setSnackbar({ open: true, message: 'Escribe un nombre válido para crear el perfil.', severity: 'warning' });
             return;
         }
-        setProfileDialogData({ nombre: nombre.trim(), tipo: 'persona' });
+        // Solo la primera palabra
+        const cleanName = nombre.trim().split(/\s|\.|,|;|:|\(|\)|\[|\]|\{|\}|\n|\r|\t/)[0];
+        setProfileDialogData({ nombre: cleanName, tipo: 'persona' });
         setProfileDialogEdit(false);
         setIsMentionModalOpen(false);
         setIsProfileDialogOpen(true);
@@ -287,45 +278,50 @@ const NewEntry = ({
                 const trimmedName = name.trim();
                 let profile = await findProfileByNameExact(trimmedName);
                 if (!profile) {
-                    // Mantener creación automática por ahora (o quitar si se prefiere ignorar)
-                    console.log(`Profile '${trimmedName}' not found while saving, creating...`);
                     try {
                         const newProfileData = { nombre: trimmedName, tipo: 'persona' };
                         profile = await addProfile(newProfileData);
                         if (!profile || !profile.id) { throw new Error(`Failed to get ID for newly created profile: ${trimmedName}`); }
-                        console.log(`Created profile '${trimmedName}' with ID: ${profile.id}`);
-                    } catch (creationError) { console.error(`Error auto-creating profile for '${trimmedName}':`, creationError); continue; }
+                    } catch (creationError) { continue; }
                 }
                 if (profile && profile.id) {
                     currentDetectedProfileRefs.add(profile.id);
                 }
             }
 
-            // 3. *** CORREGIDO: Determinar el array final de profileRefs CON FUSIÓN ***
+            // 3. FUSIONAR refs existentes y detectadas (si editando)
             let finalProfileRefs = [];
-            const detectedRefsArray = Array.from(currentDetectedProfileRefs); // Convertir Set a Array
-
-            if (entry && entry.id) { // Si estamos EDITANDO
-                // Obtener los IDs que YA estaban en la entrada original (del prop 'entry')
+            const detectedRefsArray = Array.from(currentDetectedProfileRefs);
+            if (entry && entry.id) {
                 const existingProfileRefs = entry.profileRefs || [];
-                // *** FUSIONAR: Combinar existentes + detectados ahora, sin duplicados ***
-                const combinedRefs = new Set([...existingProfileRefs, ...detectedRefsArray]);
-                finalProfileRefs = Array.from(combinedRefs);
-                console.log("Updating entry. Existing Refs:", existingProfileRefs, "Detected Refs:", detectedRefsArray, "Final Refs (Merged):", finalProfileRefs);
-            } else { // Si estamos CREANDO una nueva entrada
-                finalProfileRefs = detectedRefsArray; // Solo los detectados ahora
-                console.log("Creating new entry. Final Refs:", finalProfileRefs);
+                finalProfileRefs = Array.from(new Set([...existingProfileRefs, ...detectedRefsArray]));
+            } else {
+                finalProfileRefs = detectedRefsArray;
             }
 
-            // 4. Preparar datos de la entrada (título, contenido, etc.)
-            let titleToSave = title.trim(); if (!titleToSave && !entry?.id) { try { const q = query(entriesRef); const snapshot = await getCountFromServer(q); const count = snapshot.data().count; titleToSave = `Nota ${count + 1}`; } catch (countError) { console.error("Error getting entry count:", countError); titleToSave = `Entrada ${new Date().toLocaleTimeString()}`; } } else if (!titleToSave && entry?.id) { titleToSave = "Entrada sin título"; }
+            // 4. Guardar solo etiquetas válidas como strings
+            const cleanSelectedTags = selectedTags.filter(
+                t => typeof t === 'string' && t.trim() && availableTags.some(tag => tag.name === t)
+            );
 
-            // 5. GUARDAR 'finalProfileRefs' (El array combinado o nuevo)
+            // 4.1. Título seguro: si está vacío, poner "Nota N"
+            let titleToSave = title.trim();
+            if (!titleToSave) {
+                // Contar cuántas notas existen
+                let count = 0;
+                try {
+                    const q = query(entriesRef);
+                    const snapshot = await getCountFromServer(q);
+                    count = snapshot.data().count || 0;
+                } catch (e) {}
+                titleToSave = `Nota ${count + 1}`;
+            }
+
             const entryData = {
                 title: titleToSave,
                 titleLower: titleToSave.toLowerCase(),
                 content,
-                tags: selectedTags,
+                tags: cleanSelectedTags, // solo strings
                 createdAt: dateToSave,
                 profileRefs: finalProfileRefs,
                 notebookId: notebookId || 'default',
@@ -398,7 +394,49 @@ const NewEntry = ({
             <Box sx={{ mt: 'auto', pt: 2, borderTop: '1px solid #eee', flexShrink: 0 }}>
                  <Grid container spacing={2} alignItems="center">
                     {/* Controles */}
-                    <Grid item xs={12} sm={6} md={3}> <FormControl fullWidth size="small"> <InputLabel id="tags-label">Etiquetas</InputLabel> <Select labelId="tags-label" multiple value={selectedTags} onChange={handleTagsChange} input={<OutlinedInput label="Etiquetas" />} renderValue={(selected) => (<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>{selected.map((value) => (<Chip key={value} label={value} size="small" />))}</Box>)}> {availableTags.map((tag) => (<MenuItem key={tag} value={tag}>{tag}</MenuItem>))} </Select> </FormControl> </Grid>
+                    <Grid item xs={12} sm={6} md={3}> 
+                        <FormControl fullWidth size="small">
+                            <InputLabel id="tags-label">Etiquetas</InputLabel>
+                            <Select
+                                labelId="tags-label"
+                                multiple
+                                value={selectedTags}
+                                onChange={handleTagsChange}
+                                input={<OutlinedInput label="Etiquetas" />}
+                                renderValue={(selected) => (
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                        {selected.map((name) => {
+                                            const tag = getTagObj(name);
+                                            return (
+                                                <Chip
+                                                    key={tag.name}
+                                                    label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                        <Avatar sx={{ bgcolor: tag.color, width: 20, height: 20, mr: 0.5 }}>
+                                                            {ICONS[tag.icon] || <LocalOfferOutlinedIcon />}
+                                                        </Avatar>
+                                                        <span>{tag.name}</span>
+                                                    </Box>}
+                                                    size="small"
+                                                    sx={{ bgcolor: tag.color, color: '#fff', fontWeight: 500 }}
+                                                />
+                                            );
+                                        })}
+                                    </Box>
+                                )}
+                            >
+                                {availableTags.map((tag) => (
+                                    <MenuItem key={tag.name} value={tag.name}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Avatar sx={{ bgcolor: tag.color, width: 20, height: 20, mr: 1 }}>
+                                                {ICONS[tag.icon] || <LocalOfferOutlinedIcon />}
+                                            </Avatar>
+                                            <Typography variant="body2">{tag.name}</Typography>
+                                        </Box>
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                    </Grid>
                     <Grid item xs={12} sm={6} md={3}> <FormControl fullWidth size="small"> <InputLabel>Año</InputLabel> <Select value={fecha?.year || ''} label="Año" onChange={e => setFecha(f => ({ ...f, year: e.target.value }))}> <MenuItem value="">Indefinido</MenuItem> {years.map(y => <MenuItem key={y} value={String(y)}>{y}</MenuItem>)} </Select> </FormControl> </Grid>
                     <Grid item xs={12} sm={6} md={3}> <FormControl fullWidth size="small"> <InputLabel>Mes</InputLabel> <Select value={fecha?.month || ''} label="Mes" onChange={e => setFecha(f => ({ ...f, month: e.target.value }))}> <MenuItem value="">Indefinido</MenuItem> {MONTHS.slice(1).map((m, i) => <MenuItem key={i+1} value={String(i+1)}>{m}</MenuItem>)} </Select> </FormControl> </Grid>
                     <Grid item xs={12} sm={6} md={3}> <FormControl fullWidth size="small"> <InputLabel>Día</InputLabel> <Select value={fecha?.day || ''} label="Día" onChange={e => setFecha(f => ({ ...f, day: e.target.value }))}> <MenuItem value="">Indefinido</MenuItem> {days.map(d => <MenuItem key={d} value={String(d)}>{d}</MenuItem>)} </Select> </FormControl> </Grid>

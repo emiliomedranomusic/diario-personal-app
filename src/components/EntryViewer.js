@@ -10,13 +10,51 @@ import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import Snackbar from '@mui/material/Snackbar';
 import { auth } from '../firebase';
+import { Avatar, Chip } from '@mui/material';
+import LocalOfferOutlinedIcon from '@mui/icons-material/LocalOfferOutlined';
+import WorkOutlineIcon from '@mui/icons-material/WorkOutline';
+import SchoolIcon from '@mui/icons-material/School';
+import FamilyRestroomIcon from '@mui/icons-material/FamilyRestroom';
+import StarBorderIcon from '@mui/icons-material/StarBorder';
+import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
+import BookOutlinedIcon from '@mui/icons-material/BookOutlined';
+import ChurchIcon from '@mui/icons-material/Church';
+import GroupIcon from '@mui/icons-material/Group';
+import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import FlightIcon from '@mui/icons-material/Flight';
 
-const EntryViewer = ({ entry, onEdit, onDelete, onClose }) => {
+const EntryViewer = ({ entry, onEdit, onDelete, onClose, availableTags = [] }) => {
   const [snackbar, setSnackbar] = React.useState({ open: false, message: '', severity: 'info' });
   const [isResubmitting, setIsResubmitting] = React.useState(false);
   const [attachmentUrls, setAttachmentUrls] = React.useState([]);
   const [attachmentLoading, setAttachmentLoading] = React.useState([]);
   const [attachmentErrors, setAttachmentErrors] = React.useState([]);
+
+  const ICONS = {
+    WorkOutline: <WorkOutlineIcon />, School: <SchoolIcon />, FamilyRestroom: <FamilyRestroomIcon />, StarBorder: <StarBorderIcon />, FavoriteBorder: <FavoriteBorderIcon />, BookOutlined: <BookOutlinedIcon />, Church: <ChurchIcon />, Group: <GroupIcon />, LocalHospital: <LocalHospitalIcon />, AttachMoney: <AttachMoneyIcon />, Flight: <FlightIcon />, LocalOfferOutlined: <LocalOfferOutlinedIcon />
+  };
+
+  const renderTags = (tags, tagsList = []) => (
+    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+      {tags.map((name) => {
+        const tag = (tagsList || []).find(t => t.name === name) || { name };
+        return (
+          <Chip
+            key={tag.name}
+            label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Avatar sx={{ bgcolor: tag.color, width: 20, height: 20, mr: 0.5 }}>
+                {ICONS[tag.icon] || <LocalOfferOutlinedIcon />}
+              </Avatar>
+              <span>{tag.name}</span>
+            </Box>}
+            size="small"
+            sx={{ bgcolor: tag.color, color: '#fff', fontWeight: 500 }}
+          />
+        );
+      })}
+    </Box>
+  );
 
   React.useEffect(() => {
     if (!entry || !entry.attachments) return;
@@ -278,9 +316,7 @@ const EntryViewer = ({ entry, onEdit, onDelete, onClose }) => {
           {entry.notebookId && entry.notebookId !== 'default' && ` | Cuaderno: ${entry.notebookId}`} {/* Opcional: mostrar cuaderno */}
         </Typography>
          {entry.tags && entry.tags.length > 0 && (
-            <Typography variant="caption" display="block" color="text.secondary">
-                 Etiquetas: {entry.tags.join(', ')}
-            </Typography>
+            <Box sx={{ mt: 1 }}>{renderTags(entry.tags, availableTags)}</Box>
          )}
         {/* Botones de exportación */}
         <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>

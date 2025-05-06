@@ -237,8 +237,12 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
         // 1. Filtro Cuaderno
         if (selectedNotebookId !== 'all' && (entry.notebookId || 'default') !== selectedNotebookId) return false;
 
-        // 2. Filtro Etiquetas
-        if (filter.tag && (!entry.tags || !entry.tags.includes(filter.tag))) return false;
+        // 2. Filtro Etiquetas (soporta string y objeto)
+        if (filter.tag) {
+            if (!entry.tags || !entry.tags.some(t => (typeof t === 'string' ? t === (typeof filter.tag === 'object' ? filter.tag.name : filter.tag) : t.name === (typeof filter.tag === 'object' ? filter.tag.name : filter.tag)))) {
+                return false;
+            }
+        }
 
         // 3. Filtro Fecha (lógica sin cambios)
         const createdAt = entry.createdAt; let entryYear = ''; let entryMonthIndex = ''; let entryDay = '';
@@ -510,7 +514,7 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
                     <Collapse in={filtersOpen}>
                         <Paper sx={{ p: 2, mb: 2 }}>
                             {/* Filtros (sin cambios) */}
-                            <FormControl fullWidth sx={{ mb: 2 }} size="small"> <InputLabel id="filtro-etiqueta-label">Etiqueta</InputLabel> <Select labelId="filtro-etiqueta-label" value={filter.tag} label="Etiqueta" onChange={(e) => setFilter({ ...filter, tag: e.target.value })}><MenuItem value="">Todas</MenuItem>{availableTags.map((tag, index) => (<MenuItem key={index} value={tag}>{tag}</MenuItem>))}</Select></FormControl>
+                            <FormControl fullWidth sx={{ mb: 2 }} size="small"> <InputLabel id="filtro-etiqueta-label">Etiqueta</InputLabel> <Select labelId="filtro-etiqueta-label" value={filter.tag} label="Etiqueta" onChange={(e) => setFilter({ ...filter, tag: e.target.value })}><MenuItem value="">Todas</MenuItem>{availableTags.map((tag, index) => (<MenuItem key={index} value={typeof tag === 'string' ? tag : tag.name}>{typeof tag === 'string' ? tag : tag.name}</MenuItem>))}</Select></FormControl>
                             <FormControl fullWidth sx={{ mb: 2 }} size="small"> <InputLabel id="filtro-ano-label">Año</InputLabel> <Select labelId="filtro-ano-label" value={filter.year} label="Año" onChange={(e) => setFilter({ ...filter, year: e.target.value })}><MenuItem value="">Todos</MenuItem><MenuItem value="Indefinido">Indefinido</MenuItem>{Array.from({ length: currentYear - 1925 + 1 }, (_, i) => currentYear - i).map((year) => (<MenuItem key={year} value={String(year)}>{year}</MenuItem>))}</Select></FormControl>
                             <FormControl fullWidth sx={{ mb: 2 }} size="small"> <InputLabel id="filtro-mes-label">Mes</InputLabel> <Select labelId="filtro-mes-label" value={filter.month} label="Mes" onChange={(e) => setFilter({ ...filter, month: e.target.value })}><MenuItem value="">Todos</MenuItem>{meses.slice(1).map((mes, i) => (<MenuItem key={i + 1} value={String(i + 1)}>{mes}</MenuItem> ))}</Select></FormControl>
                             <FormControl fullWidth size="small"> <InputLabel id="filtro-dia-label">Día</InputLabel> <Select labelId="filtro-dia-label" value={filter.day} label="Día" onChange={(e) => setFilter({ ...filter, day: e.target.value })}><MenuItem value="">Todos</MenuItem>{Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (<MenuItem key={day} value={String(day)}>{day}</MenuItem>))}</Select></FormControl>

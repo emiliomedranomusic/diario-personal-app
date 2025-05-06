@@ -31,15 +31,13 @@ export function createProfile(data) {
   return { ...defaultProfile, ...data };
 }
 
-// *** MODIFICADO: extractMentions con Regex más restrictiva ***
+// Extrae solo la primera palabra después de @ (sin espacios ni signos)
 export function extractMentions(text) {
     if (!text) return [];
-
-    // Regex más estricta: permite nombres compuestos con espacio, punto o guion, pero no termina en separador ni permite cadenas basura
-    const regex = /@([a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ]+(?:[ .-][a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ]+)*)(?![a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ])/g;
-
-    const matches = text.match(regex) || [];
-    return matches.map(m => m.substring(1).trim());
+    // Solo la primera palabra después de @, sin espacios ni signos
+    const regex = /@([a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ]+)/g;
+    const matches = text.matchAll(regex);
+    return Array.from(matches, m => m[1]);
 }
 
 // Actualiza o agrega una nota relacionada a un perfil SIN MUTARLO
