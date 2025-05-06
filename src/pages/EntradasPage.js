@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     Grid, Paper, Typography, Button, FormControl, InputLabel, Select, MenuItem,
     Collapse, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Backdrop, Box,
-    TextField, InputAdornment
+    TextField, InputAdornment, Avatar
 } from '@mui/material';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
@@ -22,6 +22,33 @@ import { getMoreEntries, deleteEntryById, PAGE_SIZE, searchEntries, updateAllEnt
 import ExportDialog from '../components/ExportDialog';
 import ImportDialog from '../components/ImportDialog';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import LocalOfferOutlinedIcon from '@mui/icons-material/LocalOfferOutlined';
+import WorkOutlineIcon from '@mui/icons-material/WorkOutline';
+import SchoolIcon from '@mui/icons-material/School';
+import FamilyRestroomIcon from '@mui/icons-material/FamilyRestroom';
+import StarBorderIcon from '@mui/icons-material/StarBorder';
+import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
+import BookOutlinedIcon from '@mui/icons-material/BookOutlined';
+import ChurchIcon from '@mui/icons-material/Church';
+import GroupIcon from '@mui/icons-material/Group';
+import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import FlightIcon from '@mui/icons-material/Flight';
+
+const ICONS = {
+  WorkOutline: <WorkOutlineIcon />,
+  School: <SchoolIcon />,
+  FamilyRestroom: <FamilyRestroomIcon />,
+  StarBorder: <StarBorderIcon />,
+  FavoriteBorder: <FavoriteBorderIcon />,
+  BookOutlined: <BookOutlinedIcon />,
+  Church: <ChurchIcon />,
+  Group: <GroupIcon />,
+  LocalHospital: <LocalHospitalIcon />,
+  AttachMoney: <AttachMoneyIcon />,
+  Flight: <FlightIcon />,
+  LocalOfferOutlined: <LocalOfferOutlinedIcon />
+};
 
 const EntradasPage = ({ availableTags, setAvailableTags }) => {
     const [entries, setEntries] = useState([]);
@@ -514,7 +541,24 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
                     <Collapse in={filtersOpen}>
                         <Paper sx={{ p: 2, mb: 2 }}>
                             {/* Filtros (sin cambios) */}
-                            <FormControl fullWidth sx={{ mb: 2 }} size="small"> <InputLabel id="filtro-etiqueta-label">Etiqueta</InputLabel> <Select labelId="filtro-etiqueta-label" value={filter.tag} label="Etiqueta" onChange={(e) => setFilter({ ...filter, tag: e.target.value })}><MenuItem value="">Todas</MenuItem>{availableTags.map((tag, index) => (<MenuItem key={index} value={typeof tag === 'string' ? tag : tag.name}>{typeof tag === 'string' ? tag : tag.name}</MenuItem>))}</Select></FormControl>
+                            <FormControl fullWidth sx={{ mb: 2 }} size="small">
+  <InputLabel id="filtro-etiqueta-label">Etiqueta</InputLabel>
+  <Select labelId="filtro-etiqueta-label" value={filter.tag} label="Etiqueta" onChange={(e) => setFilter({ ...filter, tag: e.target.value })}>
+    <MenuItem value="">Todas</MenuItem>
+    {availableTags.map((tag, index) => (
+      <MenuItem key={index} value={typeof tag === 'string' ? tag : tag.name}>
+        {typeof tag === 'string' ? tag : (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Avatar sx={{ bgcolor: tag.color, width: 24, height: 24, mr: 1 }}>
+              {ICONS[tag.icon] || <LocalOfferOutlinedIcon />}
+            </Avatar>
+            <span>{tag.name}</span>
+          </Box>
+        )}
+      </MenuItem>
+    ))}
+  </Select>
+</FormControl>
                             <FormControl fullWidth sx={{ mb: 2 }} size="small"> <InputLabel id="filtro-ano-label">Año</InputLabel> <Select labelId="filtro-ano-label" value={filter.year} label="Año" onChange={(e) => setFilter({ ...filter, year: e.target.value })}><MenuItem value="">Todos</MenuItem><MenuItem value="Indefinido">Indefinido</MenuItem>{Array.from({ length: currentYear - 1925 + 1 }, (_, i) => currentYear - i).map((year) => (<MenuItem key={year} value={String(year)}>{year}</MenuItem>))}</Select></FormControl>
                             <FormControl fullWidth sx={{ mb: 2 }} size="small"> <InputLabel id="filtro-mes-label">Mes</InputLabel> <Select labelId="filtro-mes-label" value={filter.month} label="Mes" onChange={(e) => setFilter({ ...filter, month: e.target.value })}><MenuItem value="">Todos</MenuItem>{meses.slice(1).map((mes, i) => (<MenuItem key={i + 1} value={String(i + 1)}>{mes}</MenuItem> ))}</Select></FormControl>
                             <FormControl fullWidth size="small"> <InputLabel id="filtro-dia-label">Día</InputLabel> <Select labelId="filtro-dia-label" value={filter.day} label="Día" onChange={(e) => setFilter({ ...filter, day: e.target.value })}><MenuItem value="">Todos</MenuItem>{Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (<MenuItem key={day} value={String(day)}>{day}</MenuItem>))}</Select></FormControl>
@@ -561,6 +605,9 @@ const EntradasPage = ({ availableTags, setAvailableTags }) => {
                             onEdit={handleGoToEdit} // Función para pasar a modo edición
                             onDelete={() => handleDeleteEntry(selectedEntry)} // Función para eliminar
                             onClose={handleReturnToList} // Función para volver a la lista
+                            notebooks={notebooks.filter(nb => nb.id !== 'all')}
+                            availableTags={availableTags}
+                            setSnackbar={setSnackbar}
                         />
                     )}
 

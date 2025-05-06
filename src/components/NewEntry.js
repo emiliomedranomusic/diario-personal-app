@@ -59,6 +59,9 @@ const parseFecha = (entryData) => {
 const ICONS = {
     WorkOutline: <WorkOutlineIcon />, School: <SchoolIcon />, FamilyRestroom: <FamilyRestroomIcon />, StarBorder: <StarBorderIcon />, FavoriteBorder: <FavoriteBorderIcon />, BookOutlined: <BookOutlinedIcon />, Church: <ChurchIcon />, Group: <GroupIcon />, LocalHospital: <LocalHospitalIcon />, AttachMoney: <AttachMoneyIcon />, Flight: <FlightIcon />, LocalOfferOutlined: <LocalOfferOutlinedIcon />
 };
+function quitarAcentos(str) {
+    return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
 
 const NewEntry = ({
     entry,
@@ -316,12 +319,14 @@ const NewEntry = ({
                 } catch (e) {}
                 titleToSave = `Nota ${count + 1}`;
             }
-
+// ...dentro de saveEntry, antes de const entryData = { ... }
+const tagsLower = cleanSelectedTags.map(t => quitarAcentos(t.toLowerCase()));
             const entryData = {
                 title: titleToSave,
                 titleLower: titleToSave.toLowerCase(),
                 content,
                 tags: cleanSelectedTags, // solo strings
+                 tagsLower, 
                 createdAt: dateToSave,
                 profileRefs: finalProfileRefs,
                 notebookId: notebookId || 'default',
@@ -425,14 +430,14 @@ const NewEntry = ({
                                 )}
                             >
                                 {availableTags.map((tag) => (
-                                    <MenuItem key={tag.name} value={tag.name}>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <Avatar sx={{ bgcolor: tag.color, width: 20, height: 20, mr: 1 }}>
-                                                {ICONS[tag.icon] || <LocalOfferOutlinedIcon />}
-                                            </Avatar>
-                                            <Typography variant="body2">{tag.name}</Typography>
-                                        </Box>
-                                    </MenuItem>
+                                   <MenuItem key={tag.name} value={tag.name}>
+                                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                   <Avatar sx={{ bgcolor: tag.color, width: 24, height: 24, mr: 1 }}>
+    {ICONS[tag.icon] || <LocalOfferOutlinedIcon />}
+</Avatar>
+                                       <span>{tag.name}</span>
+                                   </Box>
+                               </MenuItem>
                                 ))}
                             </Select>
                         </FormControl>

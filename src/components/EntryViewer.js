@@ -24,13 +24,13 @@ import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import FlightIcon from '@mui/icons-material/Flight';
 
-const EntryViewer = ({ entry, onEdit, onDelete, onClose, availableTags = [] }) => {
+const EntryViewer = ({ entry, onEdit, onDelete, onClose, availableTags = [], notebooks = []}) => {
   const [snackbar, setSnackbar] = React.useState({ open: false, message: '', severity: 'info' });
   const [isResubmitting, setIsResubmitting] = React.useState(false);
   const [attachmentUrls, setAttachmentUrls] = React.useState([]);
   const [attachmentLoading, setAttachmentLoading] = React.useState([]);
   const [attachmentErrors, setAttachmentErrors] = React.useState([]);
-
+  const notebookName = notebooks.find(nb => nb.id === entry.notebookId)?.nombre || entry.notebookId || 'General';
   const ICONS = {
     WorkOutline: <WorkOutlineIcon />, School: <SchoolIcon />, FamilyRestroom: <FamilyRestroomIcon />, StarBorder: <StarBorderIcon />, FavoriteBorder: <FavoriteBorderIcon />, BookOutlined: <BookOutlinedIcon />, Church: <ChurchIcon />, Group: <GroupIcon />, LocalHospital: <LocalHospitalIcon />, AttachMoney: <AttachMoneyIcon />, Flight: <FlightIcon />, LocalOfferOutlined: <LocalOfferOutlinedIcon />
   };
@@ -313,7 +313,9 @@ const EntryViewer = ({ entry, onEdit, onDelete, onClose, availableTags = [] }) =
         </Typography>
         <Typography variant="caption" color="text.secondary">
           {formattedDate}
-          {entry.notebookId && entry.notebookId !== 'default' && ` | Cuaderno: ${entry.notebookId}`} {/* Opcional: mostrar cuaderno */}
+          {entry.notebookId && (
+    <> | Cuaderno: {notebookName}</>
+  )}
         </Typography>
          {entry.tags && entry.tags.length > 0 && (
             <Box sx={{ mt: 1 }}>{renderTags(entry.tags, availableTags)}</Box>

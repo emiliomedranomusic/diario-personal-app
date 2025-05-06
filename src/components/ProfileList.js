@@ -91,9 +91,9 @@ const ProfileListItem = ({ profile, onEdit, onDeleteClick, onShowMentions }) => 
                         </IconButton>
                     </Tooltip>
                     <Tooltip title="Eliminar Perfil">
-                        <IconButton edge="end" aria-label="eliminar" size="small" onClick={() => onDeleteClick(profile)}>
-                            <DeleteIcon fontSize="small" sx={{ color: 'error.main' }} />
-                        </IconButton>
+                    <IconButton edge="end" aria-label="eliminar" size="small" onClick={() => onDeleteClick(profile)}>
+    <DeleteIcon fontSize="small" sx={{ color: 'error.main' }} />
+</IconButton>
                     </Tooltip>
                 </Box>
             }
@@ -327,8 +327,17 @@ function stripHtmlTags(html) {
 
       {/* Diálogo Confirmación Borrado */}
       <Dialog open={confirmDeleteOpen} onClose={handleCancelDelete}>
-          {/* ... Contenido Confirmación Borrado ... */}
-       </Dialog>
+  <DialogTitle>¿Eliminar perfil?</DialogTitle>
+  <DialogContent>
+    <Typography>
+      ¿Estás seguro de que quieres eliminar el perfil "{profileToDelete?.nombre}"? Esta acción no se puede deshacer.
+    </Typography>
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={handleCancelDelete} variant="outlined">Cancelar</Button>
+    <Button onClick={handleConfirmDelete} color="error" variant="contained">Eliminar</Button>
+  </DialogActions>
+</Dialog>
     </Box>
   );
 }
