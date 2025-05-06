@@ -167,9 +167,60 @@ export const updateEntryProfileRefsAndContent = async (profileId, oldName, newNa
     if (!userId || !profileId || !oldName || !newName || oldName === newName || !oldName.trim() || !newName.trim()) {
         return Promise.resolve();
     }
-    console.warn(`Placeholder: updateEntryProfileRefsAndContent called for ${profileId}. Content update from @${oldName} to @${newName} is disabled.`);
-    // Lógica comentada
-    return Promise.resolve();
+    const trimmedOldName = oldName.trim();
+    const trimmedNewName = newName.trim();
+    if (trimmedOldName === trimmedNewName) return Promise.resolve();
+
+    console.log(`Attempting to update content for profile ${profileId}: "@${trimmedOldName}" -> "@${trimmedNewName}"`);
+    const entriesRef = collection(db, 'users', userId, 'entries');
+    const q = query(entriesRef, where('profileRefs', 'array-contains', profileId));
+
+    try {
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) {
+             console.log(`No entries found referencing profile ${profileId} for content update.`);
+             return Promise.resolve();
+        }
+        console.log(`Found ${snapshot.size} entries referencing profile ${profileId}. Checking content...`);
+
+        const batch = writeBatch(db);
+        let updatedCount = 0;
+
+        // *** LÓGICA DESCOMENTADA Y ACTIVA ***
+        const escapedOldName = trimmedOldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Considera si necesitas hacer la regex más permisiva o restrictiva aquí
+        const oldMentionRegex = new RegExp(`@(${escapedOldName})(?![a-zA-Z0-9_])`, 'gi');
+        const newMentionString = `@${trimmedNewName}`;
+
+        snapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            const currentContent = data.content || '';
+            oldMentionRegex.lastIndex = 0; // Resetear regex global
+            if (oldMentionRegex.test(currentContent)) {
+                oldMentionRegex.lastIndex = 0; // Resetear de nuevo
+                const newContent = currentContent.replaceAll(oldMentionRegex, newMentionString);
+                if (newContent !== currentContent) {
+                    console.log(`   Updating content for entry ${docSnap.id}`);
+                    batch.update(docSnap.ref, { content: newContent });
+                    updatedCount++;
+                }
+            }
+        });
+
+        if (updatedCount > 0) {
+             await batch.commit();
+             console.log(`Successfully updated content in ${updatedCount} entries for profile rename.`);
+        } else {
+             console.log("No entry content needed updating for this profile rename.");
+        }
+        // *** FIN LÓGICA ACTIVA ***
+        return Promise.resolve();
+
+    } catch (error) {
+        console.error("Error updating entry content for profile mentions:", error);
+        if (error.code === 'failed-precondition') { /* ... */ }
+        return Promise.reject(error);
+    }
 };
 
 // --- FUNCIÓN PARA ACTUALIZAR TAGS EN ENTRADAS ---
